@@ -1,0 +1,25 @@
+# Build outputs
+bin/
+obj/
+out/
+publish/
+
+# IDE files
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Debian packages
+*.deb
+*.deb-staging*
+
+# OS generated
+.DS_Store
+Thumbs.db
+*~
+*.swp
+*.bak

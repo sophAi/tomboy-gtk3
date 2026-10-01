@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=Tomboy Notes
+Comment=Desktop note-taking application (.NET 8 + GTK3)
+Exec=/usr/bin/tomboy
+Icon=tomboy
+Terminal=false
+Type=Application
+Categories=GNOME;GTK;Utility;TextEditor;
+StartupNotify=true
