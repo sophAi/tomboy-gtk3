@@ -58,7 +58,7 @@ namespace Tomboy.Views
         private string lastSearchQuery = string.Empty;
         private DateTime lastEnterPressTime = DateTime.MinValue;
 
-        public NoteWindow(NoteItem noteItem, IEnumerable<string> availableNotebooks, System.Action? onSave = null, bool selectTitleOnOpen = false) 
+        public NoteWindow(NoteItem noteItem, IEnumerable<string> availableNotebooks, System.Action? onSave = null, bool selectTitleOnOpen = false, string? initialSearchText = null) 
             : base(Gtk.WindowType.Toplevel)
         {
             this.note = noteItem;
@@ -247,15 +247,23 @@ namespace Tomboy.Views
 
             GLib.Idle.Add(() =>
             {
-                if (!isClosed && textView != null && textView.Handle != IntPtr.Zero)
+                if (!isClosed)
                 {
-                    textView.GrabFocus();
-                    if (selectTitleOnOpen && textView.Buffer != null && textView.Buffer.Handle != IntPtr.Zero)
+                    if (!string.IsNullOrWhiteSpace(initialSearchText))
                     {
+                        OpenInNoteSearchBar(initialSearchText);
+                    }
+                    else if (selectTitleOnOpen && textView != null && textView.Handle != IntPtr.Zero && textView.Buffer != null && textView.Buffer.Handle != IntPtr.Zero)
+                    {
+                        textView.GrabFocus();
                         TextIter start = textView.Buffer.StartIter;
                         TextIter end = start;
                         end.ForwardToLineEnd();
                         textView.Buffer.SelectRange(end, start);
+                    }
+                    else if (textView != null && textView.Handle != IntPtr.Zero)
+                    {
+                        textView.GrabFocus();
                     }
                 }
                 return false;
@@ -652,6 +660,24 @@ namespace Tomboy.Views
             MainWindow.OpenNote(targetNote, selectTitleOnOpen: false);
         }
 
+        public string? SearchText
+        {
+            get
+            {
+                if (inNoteSearchEntry == null || inNoteSearchEntry.Handle == IntPtr.Zero)
+                    return null;
+                string text = inNoteSearchEntry.Text?.Trim() ?? string.Empty;
+                return string.IsNullOrEmpty(text) ? null : text;
+            }
+            set
+            {
+                if (!string.IsNullOrEmpty(value))
+                {
+                    OpenInNoteSearchBar(value);
+                }
+            }
+        }
+
         public void ToggleInNoteSearchBar()
         {
             if (searchHBox.Visible)
@@ -660,25 +686,36 @@ namespace Tomboy.Views
             }
             else
             {
-                searchHBox.NoShowAll = false;
-                searchHBox.ShowAll();
-                searchHBox.NoShowAll = true;
-                searchHBox.Visible = true;
+                OpenInNoteSearchBar();
+            }
+        }
 
-                if (textView.Buffer.GetSelectionBounds(out TextIter start, out TextIter end))
+        public void OpenInNoteSearchBar(string? searchText = null)
+        {
+            searchHBox.NoShowAll = false;
+            searchHBox.ShowAll();
+            searchHBox.NoShowAll = true;
+            searchHBox.Visible = true;
+
+            if (!string.IsNullOrEmpty(searchText))
+            {
+                textView.Buffer.PlaceCursor(textView.Buffer.StartIter);
+                inNoteSearchEntry.Text = searchText;
+            }
+            else if (textView.Buffer.GetSelectionBounds(out TextIter start, out TextIter end))
+            {
+                string sel = textView.Buffer.GetText(start, end, false);
+                if (!string.IsNullOrEmpty(sel) && !sel.Contains('\n'))
                 {
-                    string sel = textView.Buffer.GetText(start, end, false);
-                    if (!string.IsNullOrEmpty(sel) && !sel.Contains('\n'))
-                    {
-                        inNoteSearchEntry.Text = sel;
-                    }
+                    inNoteSearchEntry.Text = sel;
                 }
-                inNoteSearchEntry.GrabFocus();
-                inNoteSearchEntry.SelectRegion(0, inNoteSearchEntry.Text.Length);
-                if (!string.IsNullOrWhiteSpace(inNoteSearchEntry.Text))
-                {
-                    PerformInNoteSearch(scrollToMatch: true, advanceNext: false);
-                }
+            }
+
+            inNoteSearchEntry.GrabFocus();
+            inNoteSearchEntry.SelectRegion(0, inNoteSearchEntry.Text.Length);
+            if (!string.IsNullOrWhiteSpace(inNoteSearchEntry.Text))
+            {
+                PerformInNoteSearch(scrollToMatch: true, advanceNext: false);
             }
         }
 
@@ -926,6 +963,7 @@ namespace Tomboy.Views
             }
             searchMatches.Clear();
             currentSearchIndex = -1;
+            lastSearchQuery = string.Empty;
         }
 
         private void OnTextViewKeyPress(object o, KeyPressEventArgs args)

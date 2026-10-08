@@ -387,6 +387,24 @@ namespace Tomboy.Views
             return menuBar;
         }
 
+        public string? SearchText
+        {
+            get
+            {
+                if (searchEntry == null || searchEntry.Handle == IntPtr.Zero)
+                    return null;
+                string text = searchEntry.Text?.Trim() ?? string.Empty;
+                return string.IsNullOrEmpty(text) ? null : text;
+            }
+            set
+            {
+                if (searchEntry != null && searchEntry.Handle != IntPtr.Zero)
+                {
+                    searchEntry.Text = value ?? string.Empty;
+                }
+            }
+        }
+
         public void SetSearchText(string text)
         {
             searchEntry.Text = text;
@@ -750,15 +768,19 @@ namespace Tomboy.Views
             if (notesListStore.GetIter(out TreeIter iter, args.Path))
             {
                 var note = (NoteItem)notesListStore.GetValue(iter, 4);
-                OpenNoteWindow(note);
+                OpenNoteWindow(note, initialSearchText: SearchText);
             }
         }
 
-        public void OpenNoteWindow(NoteItem note, bool selectTitleOnOpen = false)
+        public void OpenNoteWindow(NoteItem note, bool selectTitleOnOpen = false, string? initialSearchText = null)
         {
             if (openNoteWindows.TryGetValue(note.Guid, out var existingWin) && existingWin != null && existingWin.Handle != IntPtr.Zero)
             {
                 existingWin.Present();
+                if (!string.IsNullOrWhiteSpace(initialSearchText))
+                {
+                    existingWin.OpenInNoteSearchBar(initialSearchText);
+                }
                 return;
             }
 
@@ -768,7 +790,7 @@ namespace Tomboy.Views
                 return false;
             });
 
-            var win = new NoteWindow(note, availableNbs, () => RefreshNotes(), selectTitleOnOpen: selectTitleOnOpen);
+            var win = new NoteWindow(note, availableNbs, () => RefreshNotes(), selectTitleOnOpen: selectTitleOnOpen, initialSearchText: initialSearchText);
             openNoteWindows[note.Guid] = win;
             win.DeleteEvent += (s, e) => {
                 openNoteWindows.Remove(note.Guid);
@@ -780,23 +802,27 @@ namespace Tomboy.Views
             win.Present();
         }
 
-        public static void OpenNote(NoteItem note, bool selectTitleOnOpen = false)
+        public static void OpenNote(NoteItem note, bool selectTitleOnOpen = false, string? initialSearchText = null)
         {
             if (openNoteWindows.TryGetValue(note.Guid, out var existingWin) && existingWin != null && existingWin.Handle != IntPtr.Zero)
             {
                 existingWin.Present();
+                if (!string.IsNullOrWhiteSpace(initialSearchText))
+                {
+                    existingWin.OpenInNoteSearchBar(initialSearchText);
+                }
                 return;
             }
 
             if (Instance != null && Instance.Handle != IntPtr.Zero)
             {
-                Instance.OpenNoteWindow(note, selectTitleOnOpen);
+                Instance.OpenNoteWindow(note, selectTitleOnOpen, initialSearchText);
                 return;
             }
 
             var allNotes = NoteStorage.LoadAllNotes();
             var availableNbs = allNotes.Select(n => n.Notebook).Where(b => !string.IsNullOrEmpty(b)).Distinct();
-            var win = new NoteWindow(note, availableNbs, onSave: () => Instance?.RefreshNotes(), selectTitleOnOpen: selectTitleOnOpen);
+            var win = new NoteWindow(note, availableNbs, onSave: () => Instance?.RefreshNotes(), selectTitleOnOpen: selectTitleOnOpen, initialSearchText: initialSearchText);
             openNoteWindows[note.Guid] = win;
             win.DeleteEvent += (s, e) => openNoteWindows.Remove(note.Guid);
             win.Destroyed += (s, e) => openNoteWindows.Remove(note.Guid);
@@ -955,7 +981,7 @@ namespace Tomboy.Views
                             var menu = new Menu();
 
                             var openItem = new MenuItem("📖 開啟筆記(_O)");
-                            openItem.Activated += (s, e) => OpenNoteWindow(note);
+                            openItem.Activated += (s, e) => OpenNoteWindow(note, initialSearchText: SearchText);
                             menu.Append(openItem);
 
                             var exportItem = new MenuItem("🌐 輸出成 HTML(_E)...");
