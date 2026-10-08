@@ -80,7 +80,7 @@ namespace Tomboy.Models
 
         public int CursorPosition { get; set; } = 0;
         public int SelectionBoundPosition { get; set; } = 0;
-        public int Width { get; set; } = 600;
+        public int Width { get; set; } = 650;
         public int Height { get; set; } = 480;
         public int X { get; set; } = -1;
         public int Y { get; set; } = -1;

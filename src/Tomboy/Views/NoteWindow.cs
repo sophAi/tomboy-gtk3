@@ -65,7 +65,7 @@ namespace Tomboy.Views
             this.onSaveCallback = onSave;
 
             Title = noteItem.Title;
-            SetDefaultSize(noteItem.Width > 100 ? noteItem.Width : 600, noteItem.Height > 100 ? noteItem.Height : 480);
+            SetDefaultSize(noteItem.Width > 100 ? Math.Max(noteItem.Width, 650) : 650, noteItem.Height > 100 ? noteItem.Height : 480);
             if (noteItem.X >= 0 && noteItem.Y >= 0)
             {
                 Move(noteItem.X, noteItem.Y);
@@ -145,10 +145,8 @@ namespace Tomboy.Views
             };
 
             var nbToolItem = new ToolItem();
-            var nbHBox = new HBox(false, 4);
-            nbHBox.PackStart(new Label("Notebook:"), false, false, 2);
-            nbHBox.PackStart(notebookCombo, false, false, 0);
-            nbToolItem.Add(nbHBox);
+            notebookCombo.TooltipText = "Notebook";
+            nbToolItem.Add(notebookCombo);
             toolbar.Insert(nbToolItem, -1);
 
             mainVBox.PackStart(toolbar, false, false, 0);
