@@ -30,11 +30,11 @@ Modernized Linux desktop note-taking application ported to **.NET 8** and **GTK+
   - 移除佔據橫向空間的「Notebook:」標籤文字，直接顯示筆記本下拉選單並搭配 Tooltip 提示。
   - 預設開啟筆記視窗寬度調整為 650px，確保在各式 Linux 桌面主題與字型縮放下，工具列所有按鈕與筆記本下拉選單皆完整呈現，不會被擠入折疊選單。
 - **命令行、系統常駐與快速啟動器整合**：
-  - **托盤常駐模式 (`--tray`, `--background`, `-b`)**：支援開機或背景啟動時僅常駐於 MATE Panel / 系統通知區，不自動彈出主搜尋筆記視窗；隨時點擊托盤圖示即可切換顯示視窗或搜尋筆記；若實例已在背景執行，再次執行 `tomboy --tray` 亦會靜默退出，避免干擾使用者。
-  - **開機自動啟動 (Autostart)**：相容 Linux Mint / Ubuntu「啟動應用程式」，設定指令為 `tomboy --tray` 即可實現登入後無縫背景常駐。
+  - **托盤常駐模式 (`--tray`, `--background`, `-b`)**：支援開機或背景啟動時僅常駐於 MATE Panel / 系統通知區，**完全不彈出主搜尋筆記視窗**，安靜待命；隨時點擊托盤圖示即可切換顯示視窗或搜尋筆記；若實例已在背景執行，再次執行 `tomboy --tray` 亦會靜默退出，避免干擾使用者。
+  - **開機自動啟動 (Autostart)**：完美相容 Linux Mint / Ubuntu「啟動應用程式」，設定指令為 `tomboy --tray` 即可實現開機登入後無縫背景常駐。
   - **命令列操作參數**：完整支援 `--open-note <路徑或標題>`、`--search [關鍵字]`、`--new-note [標題]`、`--start-here`、`-q / --quit` 等參數，完美整合 **Synapse**、**Ulauncher**、**Kupfer** 等快速啟動器與桌面自動化腳本。
 - **個人化色彩樣式偏好設定 (Preferences)**：
-  - 於「偏好設定」視窗與 `preferences.json` 整合統一色彩管理區塊，支援自由自訂「筆記標題色彩」、「筆記內部連結色彩」與「外部網址超連結色彩」。
+  - 於「偏好設定」視窗與 `preferences.json` 整合統一色彩管理區塊，支援自由自訂「筆記標題色彩 (`NoteTitleColor`)」、「筆記內部連結色彩 (`NoteLinkColor`)」與「外部網址超連結色彩 (`UrlLinkColor`)」。
   - 點擊色票即可透過 GTK 色彩選擇對話框即時微調，並同步更新至目前開啟的所有筆記與後續開啟之視窗。
 - **筆記本分類與拖曳管理 (Notebooks)**：
   - 支援筆記本篩選分類，筆記刪除後自動保持在目前選擇的筆記本。
@@ -44,6 +44,50 @@ Modernized Linux desktop note-taking application ported to **.NET 8** and **GTK+
   - 支援粗體、斜體、底線、刪除線、螢光標記、字級調整、等寬字型、項目符號縮排層級。
   - 支援匯出為 HTML 網頁。
   - 筆記內搜尋列 (Ctrl+F) 支援高亮與 Enter 連續搜尋下一個相符項目。
+
+---
+
+## 💻 命令行參數與系統常駐用法 (CLI & Tray Usage)
+
+Tomboy 提供完整的命令行介面，支援背景托盤常駐與快速筆記操作：
+
+| 命令列參數 | 說明 |
+| :--- | :--- |
+| `tomboy --tray` 或 `-b` | **常駐托盤模式**：啟動並常駐於系統匣 (MATE Panel)，**不顯示主搜尋視窗**；點擊托盤圖示可隨時展開視窗。若 Tomboy 已在背景執行，則靜默退出不重複開啟。 |
+| `tomboy` | 正常啟動，顯示「搜尋所有筆記」主視窗並常駐托盤。 |
+| `tomboy --search [關鍵字]` | 開啟主搜尋視窗，並可選指定預先填入搜尋關鍵字。 |
+| `tomboy --new-note [標題]` | 立即建立並開啟新筆記（可選指定初始標題）。 |
+| `tomboy --open-note <標題/URI/路徑>` | 依標題、`note://tomboy/...` URI 或 `.note` 檔案路徑開啟指定筆記。 |
+| `tomboy --start-here` | 快速開啟「Start Here」首頁筆記。 |
+| `tomboy -q` 或 `--quit` | 關閉目前正在背景執行的 Tomboy 實例。 |
+| `tomboy --help` | 顯示所有命令行參數說明。 |
+| `tomboy --version` | 顯示程式版本資訊。 |
+
+### ⚙️ 設定 Linux Mint / Ubuntu 開機自動常駐 (Autostart)
+
+如需讓 Tomboy 在登入桌面時自動常駐於工作列/通知區域，且不干擾開啟主視窗：
+
+#### 方法 A：透過圖形化介面設定
+1. 開啟 **控制中心 (Control Center)** → **啟動應用程式 (Startup Applications)**。
+2. 點選 **加入 (Add)**：
+   - **名稱 (Name)**：`Tomboy Notes`
+   - **指令 (Command)**：`tomboy --tray`
+   - **註解 (Comment)**：`Start Tomboy in system tray`
+3. 儲存即可。
+
+#### 方法 B：建立桌面自啟動檔案
+亦可直接建立 `~/.config/autostart/tomboy.desktop`：
+```ini
+[Desktop Entry]
+Type=Application
+Exec=tomboy --tray
+Hidden=false
+NoDisplay=false
+X-GNOME-Autostart-enabled=true
+Name=Tomboy Notes
+Comment=Start Tomboy resident in system tray
+Icon=tomboy
+```
 
 ---
 
@@ -115,6 +159,10 @@ tomboy_gtk3_2.0.0_amd64.deb
 
 ### 安裝產生的 deb 套件：
 ```bash
+# 若先前有執行中的 Tomboy，建議先關閉舊實例
+tomboy -q || killall tomboy
+
+# 安裝套件
 sudo dpkg -i tomboy_gtk3_2.0.0_amd64.deb
 sudo apt-get install -f   # 若缺少基礎 GTK 執行套件時自動補齊
 ```
