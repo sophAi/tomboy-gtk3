@@ -18,7 +18,8 @@ namespace Tomboy
         OpenNote,
         NewNote,
         Search,
-        StartHere
+        StartHere,
+        Tray
     }
 
     class ParsedArgs
@@ -67,6 +68,11 @@ namespace Tomboy
                 if (arg == "--start-here")
                 {
                     parsed.Action = CommandLineAction.StartHere;
+                    return parsed;
+                }
+                if (arg == "--tray" || arg == "--background" || arg == "-b")
+                {
+                    parsed.Action = CommandLineAction.Tray;
                     return parsed;
                 }
                 if (arg == "--open-note")
@@ -128,6 +134,7 @@ Options:
   --new-note [title]            Create and display a new note, with a title.
   --search [text]               Open the search all notes window with optional search text.
   --start-here                  Display the 'Start Here' note.
+  --tray, --background, -b      Start Tomboy resident in notification tray without showing the main window.
   -q, --quit                    Close running Tomboy instance.
   --help, -h, --usage           Print this usage message.
   --version, -v                 Print version information.");
@@ -256,6 +263,10 @@ Options:
                                 }
                                 break;
 
+                            case CommandLineAction.Tray:
+                                // Tomboy is already running; quietly exit without displaying search window
+                                break;
+
                             case CommandLineAction.None:
                             default:
                                 await remote.DisplaySearchAsync();
@@ -315,6 +326,10 @@ Options:
                     {
                         mainWin.SetSearchText(parsed.Parameter);
                     }
+                    break;
+
+                case CommandLineAction.Tray:
+                    // Start resident in tray without displaying the main search window
                     break;
 
                 case CommandLineAction.None:
