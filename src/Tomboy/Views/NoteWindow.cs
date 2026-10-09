@@ -1916,6 +1916,7 @@ namespace Tomboy.Views
         {
             ApplyCustomPreferences();
             InitLatexSession();
+            QueueUrlHighlight(50);
         }
 
         private void InitLatexSession()
@@ -1964,6 +1965,32 @@ namespace Tomboy.Views
                     string color = cfg.NoteTitleColor;
                     titleTag.Foreground = !string.IsNullOrWhiteSpace(color) ? color : "#005A9E";
                 }
+
+                var internalLinkTag = textView.Buffer.TagTable.Lookup("link:internal");
+                if (internalLinkTag != null)
+                {
+                    string linkColor = cfg.NoteLinkColor;
+                    internalLinkTag.Foreground = !string.IsNullOrWhiteSpace(linkColor) ? linkColor : "#005A9E";
+                }
+
+                var urlTag = textView.Buffer.TagTable.Lookup("link:url");
+                if (urlTag != null)
+                {
+                    string urlColor = cfg.UrlLinkColor;
+                    urlTag.Foreground = !string.IsNullOrWhiteSpace(urlColor) ? urlColor : "#0255B2";
+                }
+
+                try
+                {
+                    textView.Buffer.TagTable.Foreach((tag) => {
+                        if (tag.Name != null && tag.Name.StartsWith("note_link_"))
+                        {
+                            string linkColor = cfg.NoteLinkColor;
+                            tag.Foreground = !string.IsNullOrWhiteSpace(linkColor) ? linkColor : "#005A9E";
+                        }
+                    });
+                }
+                catch { }
             }
         }
 

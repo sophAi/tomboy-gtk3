@@ -14,6 +14,8 @@ namespace Tomboy.Services
         public bool EnableCustomFont { get; set; } = false;
         public string CustomFontFace { get; set; } = "Sans 11";
         public string NoteTitleColor { get; set; } = "#005A9E";
+        public string NoteLinkColor { get; set; } = "#005A9E";
+        public string UrlLinkColor { get; set; } = "#0255B2";
         public bool EnableCustomSearchMatchColor { get; set; } = false;
         public string CustomSearchMatchColor { get; set; } = "#ffff00";
         public int NoteRenameBehavior { get; set; } = 0; // 0: 詢問我要怎麼做, 1: 永不重新命名連結, 2: 永遠重新命名連結

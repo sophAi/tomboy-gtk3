@@ -21,6 +21,8 @@ namespace Tomboy.Views
         private CheckButton checkSearchColor = null!;
         private ColorButton searchColorButton = null!;
         private ColorButton titleColorButton = null!;
+        private ColorButton noteLinkColorButton = null!;
+        private ColorButton urlLinkColorButton = null!;
         private ComboBoxText comboRenameBehavior = null!;
 
         // 2. 快速鍵 (Hotkeys) Controls
@@ -176,7 +178,85 @@ namespace Tomboy.Views
             fontHBox.PackStart(fontButton, true, true, 0);
             vbox.PackStart(fontHBox, false, false, 0);
 
-            // 5. Custom search match highlight color
+            // 5. 統一色彩設定區塊 (Unified Colors Section)
+            var colorsFrame = new Frame("<b>🎨 色彩設定</b>") { ShadowType = ShadowType.None };
+            ((Label)colorsFrame.LabelWidget).UseMarkup = true;
+
+            var colorsVBox = new VBox(false, 6) { MarginStart = 12, MarginTop = 6, MarginBottom = 6 };
+
+            // 5a. Note title color
+            var titleColorHBox = new HBox(false, 8);
+            var titleColorLabel = new Label("筆記標題文字色彩(_T)：") { Xalign = 0 };
+            titleColorButton = new ColorButton();
+            try
+            {
+                var gdkRgba = new RGBA();
+                if (gdkRgba.Parse(!string.IsNullOrWhiteSpace(cfg.NoteTitleColor) ? cfg.NoteTitleColor : "#005A9E"))
+                {
+                    titleColorButton.Rgba = gdkRgba;
+                }
+            }
+            catch { }
+            titleColorButton.ColorSet += (s, e) => {
+                var rgba = titleColorButton.Rgba;
+                string hex = $"#{(int)(rgba.Red * 255):x2}{(int)(rgba.Green * 255):x2}{(int)(rgba.Blue * 255):x2}";
+                var c = Preferences.Current;
+                c.NoteTitleColor = hex;
+                Preferences.Current = c;
+            };
+            titleColorHBox.PackStart(titleColorLabel, false, false, 0);
+            titleColorHBox.PackStart(titleColorButton, false, false, 0);
+            colorsVBox.PackStart(titleColorHBox, false, false, 0);
+
+            // 5b. Note link color (筆記互聯)
+            var noteLinkColorHBox = new HBox(false, 8);
+            var noteLinkColorLabel = new Label("筆記互相連結色彩(_L)：") { Xalign = 0 };
+            noteLinkColorButton = new ColorButton();
+            try
+            {
+                var gdkRgba = new RGBA();
+                if (gdkRgba.Parse(!string.IsNullOrWhiteSpace(cfg.NoteLinkColor) ? cfg.NoteLinkColor : "#005A9E"))
+                {
+                    noteLinkColorButton.Rgba = gdkRgba;
+                }
+            }
+            catch { }
+            noteLinkColorButton.ColorSet += (s, e) => {
+                var rgba = noteLinkColorButton.Rgba;
+                string hex = $"#{(int)(rgba.Red * 255):x2}{(int)(rgba.Green * 255):x2}{(int)(rgba.Blue * 255):x2}";
+                var c = Preferences.Current;
+                c.NoteLinkColor = hex;
+                Preferences.Current = c;
+            };
+            noteLinkColorHBox.PackStart(noteLinkColorLabel, false, false, 0);
+            noteLinkColorHBox.PackStart(noteLinkColorButton, false, false, 0);
+            colorsVBox.PackStart(noteLinkColorHBox, false, false, 0);
+
+            // 5c. URL link color (外部網址)
+            var urlLinkColorHBox = new HBox(false, 8);
+            var urlLinkColorLabel = new Label("網址超連結色彩(_U)：") { Xalign = 0 };
+            urlLinkColorButton = new ColorButton();
+            try
+            {
+                var gdkRgba = new RGBA();
+                if (gdkRgba.Parse(!string.IsNullOrWhiteSpace(cfg.UrlLinkColor) ? cfg.UrlLinkColor : "#0255B2"))
+                {
+                    urlLinkColorButton.Rgba = gdkRgba;
+                }
+            }
+            catch { }
+            urlLinkColorButton.ColorSet += (s, e) => {
+                var rgba = urlLinkColorButton.Rgba;
+                string hex = $"#{(int)(rgba.Red * 255):x2}{(int)(rgba.Green * 255):x2}{(int)(rgba.Blue * 255):x2}";
+                var c = Preferences.Current;
+                c.UrlLinkColor = hex;
+                Preferences.Current = c;
+            };
+            urlLinkColorHBox.PackStart(urlLinkColorLabel, false, false, 0);
+            urlLinkColorHBox.PackStart(urlLinkColorButton, false, false, 0);
+            colorsVBox.PackStart(urlLinkColorHBox, false, false, 0);
+
+            // 5d. Custom search match highlight color
             var colorHBox = new HBox(false, 8);
             checkSearchColor = new CheckButton("使用自選搜尋相符色彩(_C)") { Active = cfg.EnableCustomSearchMatchColor };
             searchColorButton = new ColorButton();
@@ -190,7 +270,6 @@ namespace Tomboy.Views
             }
             catch { }
             searchColorButton.Sensitive = checkSearchColor.Active;
-
             checkSearchColor.Toggled += (s, e) => {
                 searchColorButton.Sensitive = checkSearchColor.Active;
                 var c = Preferences.Current;
@@ -204,36 +283,12 @@ namespace Tomboy.Views
                 c.CustomSearchMatchColor = hex;
                 Preferences.Current = c;
             };
-
             colorHBox.PackStart(checkSearchColor, false, false, 0);
             colorHBox.PackStart(searchColorButton, false, false, 0);
-            vbox.PackStart(colorHBox, false, false, 0);
+            colorsVBox.PackStart(colorHBox, false, false, 0);
 
-            // 5b. Custom note title color
-            var titleColorHBox = new HBox(false, 8);
-            var titleColorLabel = new Label("筆記標題文字色彩(_T)：") { Xalign = 0 };
-            titleColorButton = new ColorButton();
-            try
-            {
-                var gdkRgba = new RGBA();
-                if (gdkRgba.Parse(!string.IsNullOrWhiteSpace(cfg.NoteTitleColor) ? cfg.NoteTitleColor : "#005A9E"))
-                {
-                    titleColorButton.Rgba = gdkRgba;
-                }
-            }
-            catch { }
-
-            titleColorButton.ColorSet += (s, e) => {
-                var rgba = titleColorButton.Rgba;
-                string hex = $"#{(int)(rgba.Red * 255):x2}{(int)(rgba.Green * 255):x2}{(int)(rgba.Blue * 255):x2}";
-                var c = Preferences.Current;
-                c.NoteTitleColor = hex;
-                Preferences.Current = c;
-            };
-
-            titleColorHBox.PackStart(titleColorLabel, false, false, 0);
-            titleColorHBox.PackStart(titleColorButton, false, false, 0);
-            vbox.PackStart(titleColorHBox, false, false, 0);
+            colorsFrame.Add(colorsVBox);
+            vbox.PackStart(colorsFrame, false, false, 0);
 
             // 6. Note renaming behavior
             var renameHBox = new HBox(false, 8);

@@ -77,12 +77,14 @@ namespace Tomboy.Services
                 tag.Family = "Monospace";
             });
             RegisterTag(table, "link:internal", tag => {
-                tag.Foreground = "#005A9E";
+                string linkColor = Preferences.Current.NoteLinkColor;
+                tag.Foreground = !string.IsNullOrWhiteSpace(linkColor) ? linkColor : "#005A9E";
                 tag.Underline = Pango.Underline.Single;
                 tag.Weight = Weight.Bold;
             });
             RegisterTag(table, "link:url", tag => {
-                tag.Foreground = "#0255B2";
+                string urlColor = Preferences.Current.UrlLinkColor;
+                tag.Foreground = !string.IsNullOrWhiteSpace(urlColor) ? urlColor : "#0255B2";
                 tag.Underline = Pango.Underline.Single;
             });
             RegisterTag(table, "link:broken", tag => {
@@ -139,9 +141,10 @@ namespace Tomboy.Services
             TextTag tag = buffer.TagTable.Lookup(tagName);
             if (tag != null) return tag;
 
+            string linkColor = Preferences.Current.NoteLinkColor;
             tag = new TextTag(tagName)
             {
-                Foreground = "#005A9E",
+                Foreground = !string.IsNullOrWhiteSpace(linkColor) ? linkColor : "#005A9E",
                 Underline = Pango.Underline.Single,
                 Weight = Weight.Bold
             };
@@ -431,9 +434,10 @@ namespace Tomboy.Services
             string text = buffer.Text;
             if (string.IsNullOrEmpty(text)) return;
 
+            string urlColor = Preferences.Current.UrlLinkColor;
             TextTag urlTag = buffer.TagTable.Lookup("link:url") ?? new TextTag("link:url")
             {
-                Foreground = "#0255B2",
+                Foreground = !string.IsNullOrWhiteSpace(urlColor) ? urlColor : "#0255B2",
                 Underline = Pango.Underline.Single
             };
 
