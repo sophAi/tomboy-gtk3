@@ -20,6 +20,7 @@ namespace Tomboy.Views
         private FontButton fontButton = null!;
         private CheckButton checkSearchColor = null!;
         private ColorButton searchColorButton = null!;
+        private ColorButton titleColorButton = null!;
         private ComboBoxText comboRenameBehavior = null!;
 
         // 2. 快速鍵 (Hotkeys) Controls
@@ -207,6 +208,32 @@ namespace Tomboy.Views
             colorHBox.PackStart(checkSearchColor, false, false, 0);
             colorHBox.PackStart(searchColorButton, false, false, 0);
             vbox.PackStart(colorHBox, false, false, 0);
+
+            // 5b. Custom note title color
+            var titleColorHBox = new HBox(false, 8);
+            var titleColorLabel = new Label("筆記標題文字色彩(_T)：") { Xalign = 0 };
+            titleColorButton = new ColorButton();
+            try
+            {
+                var gdkRgba = new RGBA();
+                if (gdkRgba.Parse(!string.IsNullOrWhiteSpace(cfg.NoteTitleColor) ? cfg.NoteTitleColor : "#005A9E"))
+                {
+                    titleColorButton.Rgba = gdkRgba;
+                }
+            }
+            catch { }
+
+            titleColorButton.ColorSet += (s, e) => {
+                var rgba = titleColorButton.Rgba;
+                string hex = $"#{(int)(rgba.Red * 255):x2}{(int)(rgba.Green * 255):x2}{(int)(rgba.Blue * 255):x2}";
+                var c = Preferences.Current;
+                c.NoteTitleColor = hex;
+                Preferences.Current = c;
+            };
+
+            titleColorHBox.PackStart(titleColorLabel, false, false, 0);
+            titleColorHBox.PackStart(titleColorButton, false, false, 0);
+            vbox.PackStart(titleColorHBox, false, false, 0);
 
             // 6. Note renaming behavior
             var renameHBox = new HBox(false, 8);

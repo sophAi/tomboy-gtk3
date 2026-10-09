@@ -1955,6 +1955,16 @@ namespace Tomboy.Views
             {
                 textView.OverrideFont(null);
             }
+
+            if (textView.Buffer != null && textView.Buffer.Handle != IntPtr.Zero)
+            {
+                var titleTag = textView.Buffer.TagTable.Lookup("note-title");
+                if (titleTag != null)
+                {
+                    string color = cfg.NoteTitleColor;
+                    titleTag.Foreground = !string.IsNullOrWhiteSpace(color) ? color : "#005A9E";
+                }
+            }
         }
 
         private void ToggleTagOnSelection(string tagName)

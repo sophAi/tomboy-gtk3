@@ -69,7 +69,8 @@ namespace Tomboy.Services
             });
             RegisterTag(table, "note-title", tag => {
                 tag.Scale = 2.0;
-                tag.Foreground = "#005A9E";
+                string color = Preferences.Current.NoteTitleColor;
+                tag.Foreground = !string.IsNullOrWhiteSpace(color) ? color : "#005A9E";
                 tag.Underline = Pango.Underline.Single;
             });
             RegisterTag(table, "monospace", tag => {
