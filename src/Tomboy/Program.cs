@@ -330,6 +330,7 @@ Options:
 
                 case CommandLineAction.Tray:
                     // Start resident in tray without displaying the main search window
+                    mainWin.Hide();
                     break;
 
                 case CommandLineAction.None:

@@ -223,7 +223,7 @@ namespace Tomboy.Views
             mainVBox.PackStart(statusBar, false, false, 0);
 
             Add(mainVBox);
-            ShowAll();
+            mainVBox.ShowAll();
 
             RefreshNotes();
             SelectAllNotesNotebook();
