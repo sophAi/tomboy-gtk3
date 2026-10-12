@@ -25,6 +25,13 @@ namespace Tomboy.Views
         private bool isRefreshingNotebooks = false;
         private readonly HashSet<string> knownNotebooks = new(StringComparer.OrdinalIgnoreCase);
 
+        private int clickX;
+        private int clickY;
+        private static readonly TargetEntry[] dragTargets = new TargetEntry[] {
+            new TargetEntry("text/uri-list", TargetFlags.App, 1),
+            new TargetEntry("text/plain", TargetFlags.App, 2)
+        };
+
         private Pixbuf? allNotesIcon;
         private Pixbuf? unfiledNotesIcon;
         private Pixbuf? notebookIcon;
@@ -108,6 +115,21 @@ namespace Tomboy.Views
 
             notebookTreeView.Selection.Changed += OnNotebookSelectionChanged;
             notebookTreeView.ButtonPressEvent += OnNotebookTreeButtonPress;
+            notebookTreeView.KeyPressEvent += (o, args) => {
+                if (args.Event.Key == Gdk.Key.F2)
+                {
+                    if (notebookTreeView.Selection.GetSelected(out TreeIter iter))
+                    {
+                        string nbName = (string)notebookStore.GetValue(iter, 1);
+                        bool isSpecial = (bool)notebookStore.GetValue(iter, 2);
+                        if (!isSpecial)
+                        {
+                            PromptRenameNotebook(nbName);
+                            args.RetVal = true;
+                        }
+                    }
+                }
+            };
 
             var scrollNb = new ScrolledWindow();
             scrollNb.Add(notebookTreeView);
@@ -128,6 +150,8 @@ namespace Tomboy.Views
             notesListStore = new ListStore(typeof(Pixbuf), typeof(string), typeof(string), typeof(string), typeof(NoteItem)); // Pixbuf, Title, Notebook, Date, NoteItem
             notesTreeView = new TreeView(notesListStore);
             notesTreeView.HeadersVisible = true;
+            notesTreeView.Selection.Mode = SelectionMode.Multiple;
+            notesTreeView.RubberBanding = true;
 
             // Note Title Column with Note Icon
             var titleCol = new TreeViewColumn { Title = "Note", Expand = true, Resizable = true, MinWidth = 150 };
@@ -181,19 +205,29 @@ namespace Tomboy.Views
 
             notesTreeView.RowActivated += OnNoteRowActivated;
             notesTreeView.ButtonPressEvent += OnNotesTreeButtonPress;
+            notesTreeView.MotionNotifyEvent += OnNotesTreeMotionNotify;
+            notesTreeView.ButtonReleaseEvent += OnNotesTreeButtonRelease;
             notesTreeView.KeyPressEvent += (o, args) => {
                 if (args.Event.Key == Gdk.Key.Delete)
                 {
                     OnDeleteClicked(o, EventArgs.Empty);
+                    args.RetVal = true;
+                }
+                else if (args.Event.Key == Gdk.Key.Return || args.Event.Key == Gdk.Key.KP_Enter)
+                {
+                    var selected = GetSelectedNotes();
+                    if (selected.Count > 0)
+                    {
+                        foreach (var n in selected)
+                        {
+                            OpenNoteWindow(n, initialSearchText: SearchText);
+                        }
+                        args.RetVal = true;
+                    }
                 }
             };
 
             // Setup Drag-and-Drop: Dragging notes into notebooks
-            var dragTargets = new TargetEntry[] {
-                new TargetEntry("text/uri-list", TargetFlags.App, 1),
-                new TargetEntry("text/plain", TargetFlags.App, 2)
-            };
-
             notesTreeView.EnableModelDragSource(
                 Gdk.ModifierType.Button1Mask,
                 dragTargets,
@@ -642,6 +676,11 @@ namespace Tomboy.Views
                         if (!isSpecial)
                         {
                             menu.Append(new SeparatorMenuItem());
+
+                            var renameNbItem = new MenuItem("✏️ 更改名稱(_R)...");
+                            renameNbItem.Activated += (s, e) => PromptRenameNotebook(nbName);
+                            menu.Append(renameNbItem);
+
                             var deleteNbItem = new MenuItem($"🗑️ 刪除筆記本「{GLib.Markup.EscapeText(nbName)}」");
                             deleteNbItem.Activated += (s, e) => PromptDeleteNotebook(nbName);
                             menu.Append(deleteNbItem);
@@ -652,6 +691,113 @@ namespace Tomboy.Views
                     }
                 }
             }
+        }
+
+        private void PromptRenameNotebook(string oldNbName)
+        {
+            if (string.IsNullOrWhiteSpace(oldNbName) ||
+                string.Equals(oldNbName, "All Notes", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(oldNbName, "Unfiled Notes", StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
+            bool isZh = CultureInfo.CurrentUICulture.TwoLetterISOLanguageName.Equals("zh", StringComparison.OrdinalIgnoreCase);
+
+            var dlg = new Dialog(isZh ? "更改筆記本名稱" : "Rename Notebook", this, DialogFlags.Modal);
+            dlg.SetDefaultSize(320, 130);
+
+            var entry = new Entry(oldNbName);
+            entry.ActivatesDefault = true;
+
+            dlg.ContentArea.PackStart(new Label(isZh ? "筆記本名稱：" : "Notebook Name:") { Xalign = 0 }, false, false, 4);
+            dlg.ContentArea.PackStart(entry, false, false, 4);
+            dlg.AddButton(isZh ? "取消" : "Cancel", ResponseType.Cancel);
+            var okBtn = (Button)dlg.AddButton(isZh ? "確定" : "OK", ResponseType.Accept);
+            okBtn.CanDefault = true;
+            dlg.Default = okBtn;
+            dlg.ShowAll();
+
+            entry.SelectRegion(0, entry.Text.Length);
+            entry.GrabFocus();
+
+            int resp = dlg.Run();
+            string newName = entry.Text?.Trim() ?? string.Empty;
+            dlg.Hide();
+            dlg.Dispose();
+
+            if (resp != (int)ResponseType.Accept)
+            {
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(newName))
+            {
+                var errDlg = new MessageDialog(this, DialogFlags.Modal, MessageType.Warning, ButtonsType.Ok,
+                    isZh ? "筆記本名稱不能為空。" : "Notebook name cannot be empty.");
+                errDlg.Run();
+                errDlg.Hide();
+                errDlg.Dispose();
+                return;
+            }
+
+            if (string.Equals(newName, "All Notes", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(newName, "Unfiled Notes", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(newName, "(None)", StringComparison.OrdinalIgnoreCase))
+            {
+                var errDlg = new MessageDialog(this, DialogFlags.Modal, MessageType.Warning, ButtonsType.Ok,
+                    isZh ? "此名稱為保留名稱，無法使用。" : "This notebook name is reserved.");
+                errDlg.Run();
+                errDlg.Hide();
+                errDlg.Dispose();
+                return;
+            }
+
+            if (string.Equals(newName, oldNbName, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            if (!string.Equals(newName, oldNbName, StringComparison.OrdinalIgnoreCase) &&
+                (knownNotebooks.Contains(newName) || allNotes.Any(n => string.Equals(n.Notebook, newName, StringComparison.OrdinalIgnoreCase))))
+            {
+                var errDlg = new MessageDialog(this, DialogFlags.Modal, MessageType.Warning, ButtonsType.Ok,
+                    isZh ? $"已存在名為「{GLib.Markup.EscapeText(newName)}」的筆記本。" : $"A notebook named '{GLib.Markup.EscapeText(newName)}' already exists.");
+                errDlg.Run();
+                errDlg.Hide();
+                errDlg.Dispose();
+                return;
+            }
+
+            // 1. Update knownNotebooks
+            knownNotebooks.Remove(oldNbName);
+            knownNotebooks.Add(newName);
+
+            // 2. Update all notes under oldNbName
+            var affectedNotes = allNotes.Where(n => string.Equals(n.Notebook, oldNbName, StringComparison.OrdinalIgnoreCase)).ToList();
+            foreach (var note in affectedNotes)
+            {
+                note.SetNotebook(newName);
+                note.Save(NoteStorage.NoteDirectory);
+            }
+
+            // 3. Update current filter if it was the renamed notebook
+            if (string.Equals(currentNotebookFilter, oldNbName, StringComparison.OrdinalIgnoreCase))
+            {
+                currentNotebookFilter = newName;
+            }
+
+            // 4. Update any open NoteWindow instances
+            foreach (var kvp in openNoteWindows)
+            {
+                if (kvp.Value != null && kvp.Value.Handle != IntPtr.Zero)
+                {
+                    kvp.Value.ReloadAvailableNotebooks(knownNotebooks, kvp.Value.NoteItem?.Notebook);
+                }
+            }
+
+            // 5. Refresh notes list and notebook sidebar
+            RefreshNotes();
         }
 
         private void PromptDeleteNotebook(string nbName)
@@ -680,6 +826,13 @@ namespace Tomboy.Views
                 if (string.Equals(currentNotebookFilter, nbName, StringComparison.OrdinalIgnoreCase))
                 {
                     currentNotebookFilter = "All Notes";
+                }
+                foreach (var kvp in openNoteWindows)
+                {
+                    if (kvp.Value != null && kvp.Value.Handle != IntPtr.Zero)
+                    {
+                        kvp.Value.ReloadAvailableNotebooks(knownNotebooks, kvp.Value.NoteItem?.Notebook);
+                    }
                 }
                 RefreshNotes();
             }
@@ -783,25 +936,39 @@ namespace Tomboy.Views
 
         private void OnDeleteClicked(object? sender, EventArgs e)
         {
-            if (notesTreeView.Selection.GetSelected(out TreeIter iter))
+            var selectedNotes = GetSelectedNotes();
+            if (selectedNotes.Count == 0) return;
+
+            bool isZh = CultureInfo.CurrentUICulture.TwoLetterISOLanguageName.Equals("zh", StringComparison.OrdinalIgnoreCase);
+            string message;
+            string details = isZh ? "刪除筆記後將永久無法復原。" : "If you delete notes they are permanently lost.";
+
+            if (selectedNotes.Count == 1)
             {
-                var note = (NoteItem)notesListStore.GetValue(iter, 4);
-                if (note == null) return;
-
+                var note = selectedNotes[0];
                 string safeTitle = GLib.Markup.EscapeText(note.Title);
-                var msg = new MessageDialog(this, DialogFlags.Modal, MessageType.Question, ButtonsType.None, $"Really delete note '{safeTitle}'?\nIf you delete a note it is permanently lost.");
-                msg.AddButton("Cancel", ResponseType.Cancel);
-                msg.AddButton("Delete", ResponseType.Accept);
-                int response = msg.Run();
-                msg.Hide();
-                msg.Dispose();
+                message = isZh ? $"確定要刪除筆記「{safeTitle}」嗎？" : $"Really delete note '{safeTitle}'?";
+            }
+            else
+            {
+                message = isZh ? $"確定要刪除這 {selectedNotes.Count} 篇選取的筆記嗎？" : $"Really delete these {selectedNotes.Count} notes?";
+            }
 
-                if (response == (int)ResponseType.Accept)
+            var msg = new MessageDialog(this, DialogFlags.Modal, MessageType.Question, ButtonsType.None, $"{message}\n{details}");
+            msg.AddButton(isZh ? "取消" : "Cancel", ResponseType.Cancel);
+            msg.AddButton(isZh ? "刪除" : "Delete", ResponseType.Accept);
+            int response = msg.Run();
+            msg.Hide();
+            msg.Dispose();
+
+            if (response == (int)ResponseType.Accept)
+            {
+                foreach (var note in selectedNotes)
                 {
                     CloseOpenNoteWindow(note.Guid);
                     NoteStorage.DeleteNote(note);
-                    RefreshNotes();
                 }
+                RefreshNotes();
             }
         }
 
@@ -1006,53 +1173,188 @@ namespace Tomboy.Views
             }
         }
 
-        [GLib.ConnectBefore]
-        private void OnNotesTreeButtonPress(object o, ButtonPressEventArgs args)
+        private List<NoteItem> GetSelectedNotes()
         {
-            if (args.Event.Button == 3) // Right-click context menu
+            var result = new List<NoteItem>();
+            var paths = notesTreeView.Selection.GetSelectedRows();
+            if (paths != null)
             {
-                if (notesTreeView.GetPathAtPos((int)args.Event.X, (int)args.Event.Y, out TreePath path, out _, out _, out _))
+                foreach (var path in paths)
                 {
-                    notesTreeView.Selection.SelectPath(path);
-
                     if (notesListStore.GetIter(out TreeIter iter, path))
                     {
                         var note = (NoteItem)notesListStore.GetValue(iter, 4);
                         if (note != null)
                         {
-                            var menu = new Menu();
-
-                            var openItem = new MenuItem("📖 開啟筆記(_O)");
-                            openItem.Activated += (s, e) => OpenNoteWindow(note, initialSearchText: SearchText);
-                            menu.Append(openItem);
-
-                            var exportItem = new MenuItem("🌐 輸出成 HTML(_E)...");
-                            exportItem.Activated += (s, e) => HtmlExportService.PromptExportNote(note, this);
-                            menu.Append(exportItem);
-
-                            menu.Append(new SeparatorMenuItem());
-
-                            var deleteItem = new MenuItem("🗑️ 刪除筆記(_D)");
-                            deleteItem.Activated += OnDeleteClicked;
-                            menu.Append(deleteItem);
-
-                            menu.ShowAll();
-                            menu.Popup();
+                            result.Add(note);
                         }
+                    }
+                }
+            }
+            return result;
+        }
+
+        [GLib.ConnectBefore]
+        private void OnNotesTreeButtonPress(object o, ButtonPressEventArgs args)
+        {
+            if (args.Event.Window != notesTreeView.BinWindow)
+            {
+                return;
+            }
+
+            if (!notesTreeView.GetPathAtPos((int)args.Event.X, (int)args.Event.Y, out TreePath path, out _, out _, out _))
+            {
+                return;
+            }
+
+            clickX = (int)args.Event.X;
+            clickY = (int)args.Event.Y;
+
+            if (args.Event.Type == EventType.TwoButtonPress)
+            {
+                if (args.Event.Button == 1 && (args.Event.State & (ModifierType.ControlMask | ModifierType.ShiftMask)) == 0)
+                {
+                    notesTreeView.Selection.UnselectAll();
+                    notesTreeView.Selection.SelectPath(path);
+                    if (notesListStore.GetIter(out TreeIter iter, path))
+                    {
+                        var note = (NoteItem)notesListStore.GetValue(iter, 4);
+                        if (note != null) OpenNoteWindow(note, initialSearchText: SearchText);
+                    }
+                    args.RetVal = true;
+                    return;
+                }
+            }
+            else if (args.Event.Type == EventType.ButtonPress)
+            {
+                if (args.Event.Button == 3) // Right-click context menu
+                {
+                    if (!notesTreeView.Selection.PathIsSelected(path))
+                    {
+                        notesTreeView.Selection.UnselectAll();
+                        notesTreeView.Selection.SelectPath(path);
+                    }
+
+                    ShowNotesContextMenu();
+                    args.RetVal = true;
+                    return;
+                }
+                else if (args.Event.Button == 1)
+                {
+                    // If clicking on an already selected row without Ctrl/Shift,
+                    // do not collapse the selection immediately so the user can drag multiple notes!
+                    if (notesTreeView.Selection.PathIsSelected(path) &&
+                        (args.Event.State & (ModifierType.ControlMask | ModifierType.ShiftMask)) == 0)
+                    {
+                        args.RetVal = true;
+                        return;
                     }
                 }
             }
         }
 
+        [GLib.ConnectBefore]
+        private void OnNotesTreeMotionNotify(object o, MotionNotifyEventArgs args)
+        {
+            if ((args.Event.State & ModifierType.Button1Mask) == 0)
+            {
+                return;
+            }
+            if (args.Event.Window != notesTreeView.BinWindow)
+            {
+                return;
+            }
+
+            if (!Gtk.Drag.CheckThreshold(notesTreeView, clickX, clickY, (int)args.Event.X, (int)args.Event.Y))
+            {
+                return;
+            }
+
+            if (!notesTreeView.GetPathAtPos((int)args.Event.X, (int)args.Event.Y, out TreePath path))
+            {
+                return;
+            }
+
+            args.RetVal = true;
+            Gtk.Drag.Begin(notesTreeView, new TargetList(dragTargets), DragAction.Move, 1, args.Event);
+        }
+
+        private void OnNotesTreeButtonRelease(object o, ButtonReleaseEventArgs args)
+        {
+            if (!Gtk.Drag.CheckThreshold(notesTreeView, clickX, clickY, (int)args.Event.X, (int)args.Event.Y) &&
+                (args.Event.State & (ModifierType.ControlMask | ModifierType.ShiftMask)) == 0 &&
+                notesTreeView.Selection.CountSelectedRows() > 1)
+            {
+                if (notesTreeView.GetPathAtPos((int)args.Event.X, (int)args.Event.Y, out TreePath path))
+                {
+                    notesTreeView.Selection.UnselectAll();
+                    notesTreeView.Selection.SelectPath(path);
+                }
+            }
+        }
+
+        private void ShowNotesContextMenu()
+        {
+            var selectedNotes = GetSelectedNotes();
+            if (selectedNotes.Count == 0) return;
+
+            var menu = new Menu();
+
+            if (selectedNotes.Count == 1)
+            {
+                var note = selectedNotes[0];
+                var openItem = new MenuItem("📖 開啟筆記(_O)");
+                openItem.Activated += (s, e) => OpenNoteWindow(note, initialSearchText: SearchText);
+                menu.Append(openItem);
+
+                var exportItem = new MenuItem("🌐 輸出成 HTML(_E)...");
+                exportItem.Activated += (s, e) => HtmlExportService.PromptExportNote(note, this);
+                menu.Append(exportItem);
+
+                menu.Append(new SeparatorMenuItem());
+
+                var deleteItem = new MenuItem("🗑️ 刪除筆記(_D)");
+                deleteItem.Activated += OnDeleteClicked;
+                menu.Append(deleteItem);
+            }
+            else
+            {
+                var openItem = new MenuItem($"📖 開啟選取的 {selectedNotes.Count} 篇筆記(_O)");
+                openItem.Activated += (s, e) => {
+                    foreach (var note in selectedNotes)
+                    {
+                        OpenNoteWindow(note, initialSearchText: SearchText);
+                    }
+                };
+                menu.Append(openItem);
+
+                var exportItem = new MenuItem($"🌐 輸出選取的 {selectedNotes.Count} 篇筆記為 HTML(_E)...");
+                exportItem.Activated += (s, e) => {
+                    HtmlExportService.PromptExportAllNotes(selectedNotes, this, "選取的筆記");
+                };
+                menu.Append(exportItem);
+
+                menu.Append(new SeparatorMenuItem());
+
+                var deleteItem = new MenuItem($"🗑️ 刪除選取的 {selectedNotes.Count} 篇筆記(_D)");
+                deleteItem.Activated += OnDeleteClicked;
+                menu.Append(deleteItem);
+            }
+
+            menu.ShowAll();
+            menu.Popup();
+        }
+
         private void OnExportSelectedNoteToHtml(object? sender, EventArgs e)
         {
-            if (notesTreeView.Selection.GetSelected(out TreeIter iter))
+            var selectedNotes = GetSelectedNotes();
+            if (selectedNotes.Count == 1)
             {
-                var note = (NoteItem)notesListStore.GetValue(iter, 4);
-                if (note != null)
-                {
-                    HtmlExportService.PromptExportNote(note, this);
-                }
+                HtmlExportService.PromptExportNote(selectedNotes[0], this);
+            }
+            else if (selectedNotes.Count > 1)
+            {
+                HtmlExportService.PromptExportAllNotes(selectedNotes, this, "選取的筆記");
             }
             else
             {
@@ -1076,20 +1378,22 @@ namespace Tomboy.Views
 
         private void OnNotesTreeDragDataGet(object o, DragDataGetArgs args)
         {
-            if (notesTreeView.Selection.GetSelected(out TreeIter iter))
+            var selectedNotes = GetSelectedNotes();
+            if (selectedNotes.Count == 0) return;
+
+            var sb = new System.Text.StringBuilder();
+            foreach (var note in selectedNotes)
             {
-                var note = (NoteItem)notesListStore.GetValue(iter, 4);
-                if (note != null)
-                {
-                    string uriData = $"note://tomboy/{note.Guid}\r\n";
-                    args.SelectionData.Set(
-                        Gdk.Atom.Intern("text/uri-list", false),
-                        8,
-                        System.Text.Encoding.UTF8.GetBytes(uriData)
-                    );
-                    args.SelectionData.Text = note.Guid;
-                }
+                sb.Append($"note://tomboy/{note.Guid}\r\n");
             }
+
+            string uriData = sb.ToString();
+            args.SelectionData.Set(
+                Gdk.Atom.Intern("text/uri-list", false),
+                8,
+                System.Text.Encoding.UTF8.GetBytes(uriData)
+            );
+            args.SelectionData.Text = string.Join("\n", selectedNotes.Select(n => n.Guid));
         }
 
         private void OnNotebookTreeDragMotion(object o, DragMotionArgs args)

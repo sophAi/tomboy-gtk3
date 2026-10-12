@@ -15,6 +15,7 @@ namespace Tomboy.Views
         private static readonly char[] IndentBullets = { '•', '◦', '‣' };
 
         private NoteItem note;
+        public NoteItem NoteItem => note;
         private System.Action? onSaveCallback;
         private bool isSaving = false;
         private bool isDeleting = false;
@@ -22,6 +23,7 @@ namespace Tomboy.Views
         private bool isContentChanged = false;
         private bool isMetadataChanged = false;
         private bool isLoading = true;
+        private bool isUpdatingNotebookCombo = false;
         private uint saveTimeoutId = 0;
         private uint urlHighlightTimeoutId = 0;
         private uint searchUpdateTimeoutId = 0;
@@ -139,6 +141,7 @@ namespace Tomboy.Views
             }
             notebookCombo.Active = activeIdx;
             notebookCombo.Changed += (s, e) => {
+                if (isUpdatingNotebookCombo) return;
                 string selected = notebookCombo.ActiveText;
                 note.SetNotebook(selected);
                 isMetadataChanged = true;
@@ -2125,6 +2128,35 @@ namespace Tomboy.Views
                     }
                     index++;
                 } while (model.IterNext(ref iter));
+            }
+        }
+
+        public void ReloadAvailableNotebooks(IEnumerable<string> availableNotebooks, string? currentNotebook = null)
+        {
+            if (notebookCombo == null || notebookCombo.Handle == IntPtr.Zero) return;
+
+            string target = string.IsNullOrWhiteSpace(currentNotebook)
+                ? (string.IsNullOrWhiteSpace(note.Notebook) ? "(None)" : note.Notebook)
+                : currentNotebook;
+
+            isUpdatingNotebookCombo = true;
+            try
+            {
+                (notebookCombo.Model as ListStore)?.Clear();
+                notebookCombo.AppendText("(None)");
+                foreach (var nb in availableNotebooks)
+                {
+                    if (nb != "All Notes" && nb != "Unfiled Notes" && nb != "(None)")
+                    {
+                        notebookCombo.AppendText(nb);
+                    }
+                }
+
+                UpdateNotebookDisplay(target);
+            }
+            finally
+            {
+                isUpdatingNotebookCombo = false;
             }
         }
     }
