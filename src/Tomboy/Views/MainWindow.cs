@@ -719,9 +719,21 @@ namespace Tomboy.Views
 
         public NoteItem CreateNewNote(string? title = null, string? nbName = null)
         {
-            string noteTitle = string.IsNullOrWhiteSpace(title)
-                ? $"New Note {DateTime.Now:yyyy-MM-dd HH:mm}"
-                : title.Trim();
+            string noteTitle;
+            if (!string.IsNullOrWhiteSpace(title))
+            {
+                noteTitle = title.Trim();
+            }
+            else
+            {
+                string baseTitle = $"New Note {DateTime.Now:yyyy-MM-dd HH:mm}";
+                noteTitle = baseTitle;
+                int suffix = 1;
+                while (allNotes.Any(n => string.Equals(n.Title, noteTitle, StringComparison.OrdinalIgnoreCase)))
+                {
+                    noteTitle = $"{baseTitle} ({suffix++})";
+                }
+            }
 
             var newNote = new NoteItem
             {

@@ -385,9 +385,8 @@ namespace Tomboy.Views
             grid.Attach(entryOpenStartHere, 1, 1, 1, 1);
 
             // Row 2: Create new note
-            var lbl2 = new Label("新增筆記頁(_N):") { UseUnderline = true, Xalign = 0 };
+            var lbl2 = new Label("新增筆記頁:") { Xalign = 0 };
             entryCreateNewNote = new Entry(cfg.KeybindingCreateNewNote) { Sensitive = checkListenHotkeys.Active };
-            lbl2.MnemonicWidget = entryCreateNewNote;
             grid.Attach(lbl2, 0, 2, 1, 1);
             grid.Attach(entryCreateNewNote, 1, 2, 1, 1);
 
@@ -410,19 +409,34 @@ namespace Tomboy.Views
                 Preferences.Current = c;
             };
 
-            System.Action saveHotkeys = () => {
-                var c = Preferences.Current;
-                c.KeybindingShowNoteMenu = entryShowMenu.Text.Trim();
-                c.KeybindingOpenStartHere = entryOpenStartHere.Text.Trim();
-                c.KeybindingCreateNewNote = entryCreateNewNote.Text.Trim();
-                c.KeybindingOpenRecentChanges = entryOpenSearch.Text.Trim();
-                Preferences.Current = c;
+            uint saveHotkeysTimeoutId = 0;
+            System.Action queueSaveHotkeys = () => {
+                if (saveHotkeysTimeoutId != 0)
+                {
+                    GLib.Source.Remove(saveHotkeysTimeoutId);
+                    saveHotkeysTimeoutId = 0;
+                }
+                saveHotkeysTimeoutId = GLib.Timeout.Add(400, () => {
+                    saveHotkeysTimeoutId = 0;
+                    var c = Preferences.Current;
+                    c.KeybindingShowNoteMenu = entryShowMenu.Text.Trim();
+                    c.KeybindingOpenStartHere = entryOpenStartHere.Text.Trim();
+                    c.KeybindingCreateNewNote = entryCreateNewNote.Text.Trim();
+                    c.KeybindingOpenRecentChanges = entryOpenSearch.Text.Trim();
+                    Preferences.Current = c;
+                    return false;
+                });
             };
 
-            entryShowMenu.Changed += (s, e) => saveHotkeys();
-            entryOpenStartHere.Changed += (s, e) => saveHotkeys();
-            entryCreateNewNote.Changed += (s, e) => saveHotkeys();
-            entryOpenSearch.Changed += (s, e) => saveHotkeys();
+            entryShowMenu.Changed += (s, e) => queueSaveHotkeys();
+            entryOpenStartHere.Changed += (s, e) => queueSaveHotkeys();
+            entryCreateNewNote.Changed += (s, e) => queueSaveHotkeys();
+            entryOpenSearch.Changed += (s, e) => queueSaveHotkeys();
+
+            entryShowMenu.FocusOutEvent += (s, e) => { queueSaveHotkeys(); };
+            entryOpenStartHere.FocusOutEvent += (s, e) => { queueSaveHotkeys(); };
+            entryCreateNewNote.FocusOutEvent += (s, e) => { queueSaveHotkeys(); };
+            entryOpenSearch.FocusOutEvent += (s, e) => { queueSaveHotkeys(); };
 
             align.Add(grid);
             vbox.PackStart(align, false, false, 0);
