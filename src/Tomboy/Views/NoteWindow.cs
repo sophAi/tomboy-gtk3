@@ -24,6 +24,7 @@ namespace Tomboy.Views
         private bool isLoading = true;
         private uint saveTimeoutId = 0;
         private uint urlHighlightTimeoutId = 0;
+        private uint searchUpdateTimeoutId = 0;
         private int rightClickOffset = -1;
         private bool isHoveringOnLink = false;
         private static Gdk.Cursor? handCursor = null;
@@ -229,7 +230,7 @@ namespace Tomboy.Views
                 QueueUrlHighlight(250);
                 if (searchHBox.Visible && !string.IsNullOrWhiteSpace(inNoteSearchEntry.Text))
                 {
-                    PerformInNoteSearch(scrollToMatch: false, advanceNext: false);
+                    QueueSearchUpdate(300);
                 }
             };
 
@@ -323,6 +324,11 @@ namespace Tomboy.Views
             {
                 GLib.Source.Remove(urlHighlightTimeoutId);
                 urlHighlightTimeoutId = 0;
+            }
+            if (searchUpdateTimeoutId != 0)
+            {
+                GLib.Source.Remove(searchUpdateTimeoutId);
+                searchUpdateTimeoutId = 0;
             }
             latexSession?.Dispose();
             latexSession = null;
@@ -581,6 +587,30 @@ namespace Tomboy.Views
             });
         }
 
+        private void QueueSearchUpdate(uint delayMs = 300)
+        {
+            if (isClosed || isLoading || (latexSession != null && latexSession.IsRenderingLatex)) return;
+
+            if (searchUpdateTimeoutId != 0)
+            {
+                GLib.Source.Remove(searchUpdateTimeoutId);
+                searchUpdateTimeoutId = 0;
+            }
+
+            searchUpdateTimeoutId = GLib.Timeout.Add(delayMs, () =>
+            {
+                searchUpdateTimeoutId = 0;
+                if (!isClosed && !isLoading && searchHBox != null && searchHBox.Visible &&
+                    !string.IsNullOrWhiteSpace(inNoteSearchEntry?.Text) &&
+                    textView != null && textView.Handle != IntPtr.Zero &&
+                    textView.Buffer != null && textView.Buffer.Handle != IntPtr.Zero)
+                {
+                    PerformInNoteSearch(scrollToMatch: false, advanceNext: false, selectMatch: false);
+                }
+                return false;
+            });
+        }
+
         [GLib.ConnectBefore]
         private void OnTextViewMotionNotify(object o, MotionNotifyEventArgs args)
         {
@@ -721,6 +751,11 @@ namespace Tomboy.Views
 
         private void CloseInNoteSearchBar()
         {
+            if (searchUpdateTimeoutId != 0)
+            {
+                GLib.Source.Remove(searchUpdateTimeoutId);
+                searchUpdateTimeoutId = 0;
+            }
             ClearSearchHighlights();
             searchStatusLabel.Text = string.Empty;
             searchHBox.Hide();
@@ -841,10 +876,10 @@ namespace Tomboy.Views
 
         private void OnInNoteSearchChanged(object? sender, EventArgs e)
         {
-            PerformInNoteSearch(scrollToMatch: true, advanceNext: false);
+            PerformInNoteSearch(scrollToMatch: true, advanceNext: false, selectMatch: false);
         }
 
-        private void PerformInNoteSearch(bool scrollToMatch, bool advanceNext = false)
+        private void PerformInNoteSearch(bool scrollToMatch, bool advanceNext = false, bool selectMatch = false)
         {
             string query = inNoteSearchEntry.Text?.Trim() ?? string.Empty;
 
@@ -901,7 +936,7 @@ namespace Tomboy.Views
                 }
 
                 currentSearchIndex = nearestIdx;
-                HighlightCurrentMatch(scrollToMatch);
+                HighlightCurrentMatch(scrollToMatch, selectMatch);
             }
         }
 
@@ -912,7 +947,7 @@ namespace Tomboy.Views
 
             if (searchMatches.Count == 0 || query != lastSearchQuery)
             {
-                PerformInNoteSearch(scrollToMatch: true, advanceNext: false);
+                PerformInNoteSearch(scrollToMatch: true, advanceNext: false, selectMatch: false);
                 return;
             }
 
@@ -944,10 +979,10 @@ namespace Tomboy.Views
                 }
             }
 
-            HighlightCurrentMatch(scrollToMatch: true);
+            HighlightCurrentMatch(scrollToMatch: true, selectMatch: false);
         }
 
-        private void HighlightCurrentMatch(bool scrollToMatch)
+        private void HighlightCurrentMatch(bool scrollToMatch, bool selectMatch = false)
         {
             if (currentSearchIndex < 0 || currentSearchIndex >= searchMatches.Count) return;
 
@@ -968,7 +1003,10 @@ namespace Tomboy.Views
             TextIter end = buf.GetIterAtMark(current.EndMark);
 
             buf.ApplyTag("find-match-current", start, end);
-            buf.SelectRange(start, end);
+            if (selectMatch)
+            {
+                buf.SelectRange(start, end);
+            }
 
             if (scrollToMatch)
             {
@@ -1938,6 +1976,11 @@ namespace Tomboy.Views
             {
                 GLib.Source.Remove(urlHighlightTimeoutId);
                 urlHighlightTimeoutId = 0;
+            }
+            if (searchUpdateTimeoutId != 0)
+            {
+                GLib.Source.Remove(searchUpdateTimeoutId);
+                searchUpdateTimeoutId = 0;
             }
             ClearSearchHighlights();
             latexSession?.Dispose();
