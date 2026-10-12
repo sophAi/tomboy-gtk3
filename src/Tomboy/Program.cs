@@ -409,6 +409,33 @@ Options:
                 Console.WriteLine($"Tray icon initialization error: {ex.Message}");
             }
 
+            // 4b. Initialize Global Hotkeys
+            try
+            {
+                GlobalHotkeyService.Initialize(
+                    showMenu: () => {
+                        instanceTray?.ShowContextMenu();
+                    },
+                    startHere: () => {
+                        var win = GetOrCreateMainWindow();
+                        win.OpenStartHereNote();
+                    },
+                    newNote: () => {
+                        var win = GetOrCreateMainWindow();
+                        win.CreateNewNote();
+                    },
+                    search: () => {
+                        var win = GetOrCreateMainWindow();
+                        win.ShowAll();
+                        win.Present();
+                    }
+                );
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Global Hotkeys initialization error: {ex.Message}");
+            }
+
             // 5. Register DBus Service Asynchronously (Non-blocking)
             Task.Run(async () =>
             {

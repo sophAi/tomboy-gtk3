@@ -346,8 +346,7 @@ namespace Tomboy.Views
                 tmplNote.Save(NoteStorage.NoteDirectory);
             }
 
-            var win = new NoteWindow(tmplNote, new List<string>());
-            win.ShowAll();
+            MainWindow.OpenNote(tmplNote, selectTitleOnOpen: true);
         }
         #endregion
 

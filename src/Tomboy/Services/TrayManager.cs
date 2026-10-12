@@ -105,7 +105,7 @@ namespace Tomboy.Services
             return menu;
         }
 
-        private void ShowContextMenu()
+        public void ShowContextMenu()
         {
             popupMenu.Popup();
         }

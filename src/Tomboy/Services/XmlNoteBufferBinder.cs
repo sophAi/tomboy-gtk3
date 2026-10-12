@@ -92,7 +92,10 @@ namespace Tomboy.Services
                 tag.Underline = Pango.Underline.Single;
             });
             RegisterTag(table, "find-match", tag => {
-                tag.Background = "#FFF59D";
+                string matchColor = Preferences.Current.EnableCustomSearchMatchColor && !string.IsNullOrWhiteSpace(Preferences.Current.CustomSearchMatchColor)
+                    ? Preferences.Current.CustomSearchMatchColor
+                    : "#FFF59D";
+                tag.Background = matchColor;
                 tag.Foreground = "#000000";
             });
             RegisterTag(table, "find-match-current", tag => {

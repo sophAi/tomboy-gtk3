@@ -685,6 +685,38 @@ namespace Tomboy.Views
             }
         }
 
+        public static string GetNewNoteContent(string newTitle)
+        {
+            try
+            {
+                var notes = NoteStorage.LoadAllNotes();
+                var tmplNote = notes.FirstOrDefault(n => n.Tags.Contains("system:template") || n.Title == "New Note Template" || n.Title == "新增筆記範本");
+                if (tmplNote != null && !string.IsNullOrWhiteSpace(tmplNote.XmlContent))
+                {
+                    string safeOldTitle = System.Security.SecurityElement.Escape(tmplNote.Title);
+                    string safeNewTitle = System.Security.SecurityElement.Escape(newTitle);
+
+                    string content = tmplNote.XmlContent;
+                    if (content.Contains($"<note-title>{safeOldTitle}</note-title>"))
+                    {
+                        content = content.Replace($"<note-title>{safeOldTitle}</note-title>", $"<note-title>{safeNewTitle}</note-title>");
+                    }
+                    else if (content.Contains($"<note-title>{tmplNote.Title}</note-title>"))
+                    {
+                        content = content.Replace($"<note-title>{tmplNote.Title}</note-title>", $"<note-title>{safeNewTitle}</note-title>");
+                    }
+                    else
+                    {
+                        content = content.Replace(safeOldTitle, safeNewTitle);
+                    }
+                    return content;
+                }
+            }
+            catch { }
+
+            return $"<note-content version=\"0.1\" xmlns=\"http://beatniksoftware.com/tomboy\" xmlns:link=\"http://beatniksoftware.com/tomboy/link\" xmlns:size=\"http://beatniksoftware.com/tomboy/size\" xml:space=\"preserve\"><note-title>{System.Security.SecurityElement.Escape(newTitle)}</note-title>\n\nDescribe your new note here.</note-content>";
+        }
+
         public NoteItem CreateNewNote(string? title = null, string? nbName = null)
         {
             string noteTitle = string.IsNullOrWhiteSpace(title)
@@ -694,18 +726,16 @@ namespace Tomboy.Views
             var newNote = new NoteItem
             {
                 Title = noteTitle,
-                XmlContent = $"<note-content version=\"0.1\" xmlns=\"http://beatniksoftware.com/tomboy\" xmlns:link=\"http://beatniksoftware.com/tomboy/link\" xmlns:size=\"http://beatniksoftware.com/tomboy/size\" xml:space=\"preserve\"><note-title>{noteTitle}</note-title>\n\nDescribe your new note here.</note-content>"
+                XmlContent = GetNewNoteContent(noteTitle)
             };
 
-            string? targetNb = nbName;
-            if (string.IsNullOrWhiteSpace(targetNb) && currentNotebookFilter != "All Notes" && currentNotebookFilter != "Unfiled Notes")
+            if (!string.IsNullOrWhiteSpace(nbName) && nbName != "All Notes" && nbName != "Unfiled Notes")
             {
-                targetNb = currentNotebookFilter;
+                newNote.Notebook = nbName;
             }
-
-            if (!string.IsNullOrWhiteSpace(targetNb) && targetNb != "All Notes" && targetNb != "Unfiled Notes")
+            else
             {
-                newNote.Notebook = targetNb;
+                newNote.Notebook = string.Empty;
             }
 
             newNote.Save(NoteStorage.NoteDirectory);
@@ -721,7 +751,7 @@ namespace Tomboy.Views
 
         private void OnNewNoteClicked(object? sender, EventArgs e)
         {
-            CreateNewNoteInNotebook(currentNotebookFilter != "All Notes" && currentNotebookFilter != "Unfiled Notes" ? currentNotebookFilter : null);
+            CreateNewNote(null, null);
         }
 
         public static MainWindow? Instance { get; private set; }
@@ -934,7 +964,7 @@ namespace Tomboy.Views
 
         public void OpenStartHereNote()
         {
-            var startHere = allNotes.FirstOrDefault(n => n.Title == "Start Here");
+            var startHere = allNotes.FirstOrDefault(n => n.Title == "Start Here" || n.Title == "從這裡開始");
             if (startHere == null)
             {
                 startHere = NoteStorage.CreateDefaultStartHereNote();

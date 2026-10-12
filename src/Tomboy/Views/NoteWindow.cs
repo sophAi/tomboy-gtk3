@@ -732,6 +732,22 @@ namespace Tomboy.Views
         {
             bool ctrl = (ev.State & ModifierType.ControlMask) != 0;
             bool shift = (ev.State & ModifierType.ShiftMask) != 0;
+            bool alt = (ev.State & ModifierType.Mod1Mask) != 0;
+
+            if (alt)
+            {
+                if (ev.Key == Gdk.Key.Right || ev.Key == Gdk.Key.KP_Right)
+                {
+                    ChangeCursorDepth(true);
+                    return true;
+                }
+                if (ev.Key == Gdk.Key.Left || ev.Key == Gdk.Key.KP_Left)
+                {
+                    ChangeCursorDepth(false);
+                    return true;
+                }
+            }
+
             if (ctrl && (ev.Key == Gdk.Key.z || ev.Key == Gdk.Key.Z))
             {
                 if (shift)
@@ -773,6 +789,23 @@ namespace Tomboy.Views
             var ev = args.Event;
             bool ctrl = (ev.State & ModifierType.ControlMask) != 0;
             bool shift = (ev.State & ModifierType.ShiftMask) != 0;
+            bool alt = (ev.State & ModifierType.Mod1Mask) != 0;
+
+            if (alt)
+            {
+                if (ev.Key == Gdk.Key.Right || ev.Key == Gdk.Key.KP_Right)
+                {
+                    ChangeCursorDepth(true);
+                    args.RetVal = true;
+                    return;
+                }
+                if (ev.Key == Gdk.Key.Left || ev.Key == Gdk.Key.KP_Left)
+                {
+                    ChangeCursorDepth(false);
+                    args.RetVal = true;
+                    return;
+                }
+            }
 
             if (ctrl && (ev.Key == Gdk.Key.f || ev.Key == Gdk.Key.F))
             {
@@ -966,6 +999,7 @@ namespace Tomboy.Views
             lastSearchQuery = string.Empty;
         }
 
+        [GLib.ConnectBefore]
         private void OnTextViewKeyPress(object o, KeyPressEventArgs args)
         {
             var ev = args.Event;
@@ -1117,12 +1151,12 @@ namespace Tomboy.Views
             }
             else if (alt)
             {
-                if (ev.Key == Gdk.Key.Right)
+                if (ev.Key == Gdk.Key.Right || ev.Key == Gdk.Key.KP_Right)
                 {
                     ChangeCursorDepth(true);
                     args.RetVal = true;
                 }
-                else if (ev.Key == Gdk.Key.Left)
+                else if (ev.Key == Gdk.Key.Left || ev.Key == Gdk.Key.KP_Left)
                 {
                     ChangeCursorDepth(false);
                     args.RetVal = true;
@@ -1978,6 +2012,15 @@ namespace Tomboy.Views
                 {
                     string urlColor = cfg.UrlLinkColor;
                     urlTag.Foreground = !string.IsNullOrWhiteSpace(urlColor) ? urlColor : "#0255B2";
+                }
+
+                var findMatchTag = textView.Buffer.TagTable.Lookup("find-match");
+                if (findMatchTag != null)
+                {
+                    string matchColor = cfg.EnableCustomSearchMatchColor && !string.IsNullOrWhiteSpace(cfg.CustomSearchMatchColor)
+                        ? cfg.CustomSearchMatchColor
+                        : "#FFF59D";
+                    findMatchTag.Background = matchColor;
                 }
 
                 try
