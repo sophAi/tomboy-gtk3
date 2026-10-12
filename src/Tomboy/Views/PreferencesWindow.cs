@@ -334,7 +334,7 @@ namespace Tomboy.Views
         private void OnOpenTemplateNoteClicked(object? sender, EventArgs e)
         {
             var notes = NoteStorage.LoadAllNotes();
-            var tmplNote = notes.FirstOrDefault(n => n.Title == "New Note Template" || n.Title == "新增筆記範本" || n.Tags.Contains("system:template"));
+            var tmplNote = notes.FirstOrDefault(n => (n.Tags.Contains("system:template") && string.IsNullOrEmpty(n.Notebook)) || n.Title == "New Note Template" || n.Title == "新增筆記範本");
             if (tmplNote == null)
             {
                 tmplNote = new NoteItem

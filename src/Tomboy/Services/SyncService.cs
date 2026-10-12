@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using Tomboy.Models;
+using Tomboy.Views;
 
 namespace Tomboy.Services
 {
@@ -174,7 +175,7 @@ namespace Tomboy.Services
                         if (rev > clientRev)
                         {
                             // Server has a newer revision!
-                            bool localModified = localNote.LastChangeDate > client.LastSyncDate;
+                            bool localModified = localNote.LastMetadataChangeDate > client.LastSyncDate || localNote.LastChangeDate > client.LastSyncDate;
 
                             if (!localModified)
                             {
@@ -201,6 +202,7 @@ namespace Tomboy.Services
                                         XmlContent = localNote.XmlContent.Replace($"<note-title>{localNote.Title}</note-title>", $"<note-title>{localNote.Title} (衝突備份 {DateTime.Now:yyyy-MM-dd HHmmss})</note-title>")
                                     };
                                     backupNote.Save(localDir);
+                                    localNotes[backupNote.Guid] = backupNote;
                                     conflictsResolved++;
                                 }
 
@@ -232,6 +234,11 @@ namespace Tomboy.Services
                         client.RemoveRevision(localNote.Guid);
                         localNotes.Remove(localNote.Guid);
                         deletedLocally++;
+                        GLib.Idle.Add(() =>
+                        {
+                            MainWindow.CloseOpenNoteWindow(localNote.Guid);
+                            return false;
+                        });
                     }
                 }
 
@@ -241,7 +248,7 @@ namespace Tomboy.Services
                 {
                     int clientRev = client.GetRevision(localNote.Guid);
                     bool isNew = clientRev == -1;
-                    bool isModified = localNote.LastChangeDate > client.LastSyncDate;
+                    bool isModified = localNote.LastMetadataChangeDate > client.LastSyncDate || localNote.LastChangeDate > client.LastSyncDate;
 
                     if (isNew || isModified)
                     {

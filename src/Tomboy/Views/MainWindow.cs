@@ -455,6 +455,7 @@ namespace Tomboy.Views
                 string targetFilter = currentNotebookFilter;
                 allNotes = NoteStorage.LoadAllNotes();
 
+                knownNotebooks.Clear();
                 foreach (var n in allNotes)
                 {
                     if (!string.IsNullOrWhiteSpace(n.Notebook))
@@ -520,7 +521,7 @@ namespace Tomboy.Views
             notesListStore.Clear();
 
             string query = searchEntry.Text?.Trim().ToLower() ?? string.Empty;
-            IEnumerable<NoteItem> querySet = allNotes;
+            IEnumerable<NoteItem> querySet = allNotes.Where(n => !n.Tags.Contains("system:template"));
 
             if (currentNotebookFilter == "Unfiled Notes")
             {
@@ -641,7 +642,7 @@ namespace Tomboy.Views
             if (dlg.Run() == (int)ResponseType.Accept && !string.IsNullOrWhiteSpace(entry.Text))
             {
                 string nbName = entry.Text.Trim();
-                knownNotebooks.Add(nbName);
+                GetOrCreateNotebookTemplate(nbName);
                 currentNotebookFilter = nbName;
                 RefreshNotes();
             }
@@ -675,6 +676,13 @@ namespace Tomboy.Views
 
                         if (!isSpecial)
                         {
+                            var openTmplItem = new MenuItem("📝 開啟範本筆記(_O)...");
+                            openTmplItem.Activated += (s, e) => {
+                                var tmpl = GetOrCreateNotebookTemplate(nbName);
+                                OpenNoteWindow(tmpl);
+                            };
+                            menu.Append(openTmplItem);
+
                             menu.Append(new SeparatorMenuItem());
 
                             var renameNbItem = new MenuItem("✏️ 更改名稱(_R)...");
@@ -778,6 +786,21 @@ namespace Tomboy.Views
             foreach (var note in affectedNotes)
             {
                 note.SetNotebook(newName);
+                if (note.Tags.Contains("system:template"))
+                {
+                    if (note.Title.Contains(oldNbName))
+                    {
+                        string safeOld = System.Security.SecurityElement.Escape(note.Title);
+                        string updatedTitle = note.Title.Replace(oldNbName, newName);
+                        string safeNew = System.Security.SecurityElement.Escape(updatedTitle);
+                        note.Title = updatedTitle;
+                        if (!string.IsNullOrEmpty(note.XmlContent))
+                        {
+                            note.XmlContent = note.XmlContent.Replace($"<note-title>{safeOld}</note-title>", $"<note-title>{safeNew}</note-title>");
+                        }
+                    }
+                }
+                note.LastMetadataChangeDate = DateTime.Now;
                 note.Save(NoteStorage.NoteDirectory);
             }
 
@@ -818,10 +841,20 @@ namespace Tomboy.Views
             if (resp == (int)ResponseType.Accept)
             {
                 knownNotebooks.Remove(nbName);
-                foreach (var note in allNotes.Where(n => string.Equals(n.Notebook, nbName, StringComparison.OrdinalIgnoreCase)))
+                var notesToDelete = allNotes.Where(n => string.Equals(n.Notebook, nbName, StringComparison.OrdinalIgnoreCase)).ToList();
+                foreach (var note in notesToDelete)
                 {
-                    note.SetNotebook(null);
-                    note.Save(NoteStorage.NoteDirectory);
+                    if (note.Tags.Contains("system:template"))
+                    {
+                        CloseOpenNoteWindow(note.Guid);
+                        NoteStorage.DeleteNote(note);
+                    }
+                    else
+                    {
+                        note.SetNotebook(null);
+                        note.LastMetadataChangeDate = DateTime.Now;
+                        note.Save(NoteStorage.NoteDirectory);
+                    }
                 }
                 if (string.Equals(currentNotebookFilter, nbName, StringComparison.OrdinalIgnoreCase))
                 {
@@ -838,12 +871,55 @@ namespace Tomboy.Views
             }
         }
 
-        public static string GetNewNoteContent(string newTitle)
+        public static NoteItem GetOrCreateNotebookTemplate(string nbName)
+        {
+            var notes = NoteStorage.LoadAllNotes();
+            var existingTmpl = notes.FirstOrDefault(n => n.Tags.Contains("system:template") && string.Equals(n.Notebook, nbName, StringComparison.OrdinalIgnoreCase));
+            if (existingTmpl != null)
+                return existingTmpl;
+
+            bool isZh = CultureInfo.CurrentUICulture.TwoLetterISOLanguageName.Equals("zh", StringComparison.OrdinalIgnoreCase);
+            string tmplTitle = isZh ? $"{nbName} 筆記本範本" : $"{nbName} Notebook Template";
+            
+            string uniqueTitle = tmplTitle;
+            int counter = 1;
+            while (notes.Any(n => string.Equals(n.Title, uniqueTitle, StringComparison.OrdinalIgnoreCase)))
+            {
+                uniqueTitle = $"{tmplTitle} ({counter++})";
+            }
+
+            string defaultBody = isZh ? "在此描述您的新筆記。" : "Describe your new note here.";
+            string content = $"<note-content version=\"0.1\" xmlns=\"http://beatniksoftware.com/tomboy\" xmlns:link=\"http://beatniksoftware.com/tomboy/link\" xmlns:size=\"http://beatniksoftware.com/tomboy/size\" xml:space=\"preserve\"><note-title>{System.Security.SecurityElement.Escape(uniqueTitle)}</note-title>\n\n{defaultBody}</note-content>";
+
+            var tmpl = new NoteItem
+            {
+                Title = uniqueTitle,
+                XmlContent = content,
+                Notebook = nbName,
+                Tags = new List<string> { "system:template", $"system:notebook:{nbName}" },
+                CreateDate = DateTime.Now,
+                LastChangeDate = DateTime.Now,
+                LastMetadataChangeDate = DateTime.Now
+            };
+            tmpl.Save(NoteStorage.NoteDirectory);
+            return tmpl;
+        }
+
+        public static string GetNewNoteContent(string newTitle, string? nbName = null)
         {
             try
             {
                 var notes = NoteStorage.LoadAllNotes();
-                var tmplNote = notes.FirstOrDefault(n => n.Tags.Contains("system:template") || n.Title == "New Note Template" || n.Title == "新增筆記範本");
+                NoteItem? tmplNote = null;
+                if (!string.IsNullOrWhiteSpace(nbName) && nbName != "All Notes" && nbName != "Unfiled Notes")
+                {
+                    tmplNote = notes.FirstOrDefault(n => n.Tags.Contains("system:template") && string.Equals(n.Notebook, nbName, StringComparison.OrdinalIgnoreCase));
+                }
+                if (tmplNote == null)
+                {
+                    tmplNote = notes.FirstOrDefault(n => (n.Tags.Contains("system:template") && string.IsNullOrEmpty(n.Notebook)) || n.Title == "New Note Template" || n.Title == "新增筆記範本");
+                }
+
                 if (tmplNote != null && !string.IsNullOrWhiteSpace(tmplNote.XmlContent))
                 {
                     string safeOldTitle = System.Security.SecurityElement.Escape(tmplNote.Title);
@@ -891,12 +967,12 @@ namespace Tomboy.Views
             var newNote = new NoteItem
             {
                 Title = noteTitle,
-                XmlContent = GetNewNoteContent(noteTitle)
+                XmlContent = GetNewNoteContent(noteTitle, nbName)
             };
 
             if (!string.IsNullOrWhiteSpace(nbName) && nbName != "All Notes" && nbName != "Unfiled Notes")
             {
-                newNote.Notebook = nbName;
+                newNote.SetNotebook(nbName);
             }
             else
             {
