@@ -24,6 +24,7 @@ namespace Tomboy.Views
         private bool isMetadataChanged = false;
         private bool isLoading = true;
         private bool isUpdatingNotebookCombo = false;
+        private bool _scrollPending = false;
         private uint saveTimeoutId = 0;
         private uint urlHighlightTimeoutId = 0;
         private uint searchUpdateTimeoutId = 0;
@@ -83,6 +84,7 @@ namespace Tomboy.Views
             textView.WrapMode = Gtk.WrapMode.Word;
             textView.LeftMargin = 8;
             textView.RightMargin = 8;
+            textView.BottomMargin = 32;
             textView.PixelsAboveLines = 0;
             textView.PixelsBelowLines = 0;
             textView.PixelsInsideWrap = 0;
@@ -235,6 +237,7 @@ namespace Tomboy.Views
                 {
                     QueueSearchUpdate(300);
                 }
+                RequestScrollCursorToCenter();
             };
 
             var scroll = new ScrolledWindow();
@@ -268,6 +271,10 @@ namespace Tomboy.Views
                     else if (textView != null && textView.Handle != IntPtr.Zero)
                     {
                         textView.GrabFocus();
+                        if (noteItem.CursorPosition > 0)
+                        {
+                            RequestScrollCursorToCenter();
+                        }
                     }
                 }
                 return false;
@@ -610,6 +617,35 @@ namespace Tomboy.Views
                 {
                     PerformInNoteSearch(scrollToMatch: false, advanceNext: false, selectMatch: false);
                 }
+                return false;
+            });
+        }
+
+        public void RequestScrollCursorToCenter()
+        {
+            if (_scrollPending || isClosed || isLoading || textView == null || textView.Handle == IntPtr.Zero)
+                return;
+
+            _scrollPending = true;
+            GLib.Idle.Add(() =>
+            {
+                _scrollPending = false;
+                if (isClosed || textView == null || textView.Handle == IntPtr.Zero)
+                    return false;
+
+                try
+                {
+                    var buf = textView.Buffer;
+                    if (buf != null && buf.Handle != IntPtr.Zero)
+                    {
+                        var mark = buf.InsertMark;
+                        if (mark != null && mark.Handle != IntPtr.Zero)
+                        {
+                            textView.ScrollToMark(mark, 0.0, true, 0.0, 0.5);
+                        }
+                    }
+                }
+                catch { }
                 return false;
             });
         }
@@ -1066,26 +1102,37 @@ namespace Tomboy.Views
                     if (!ctrl)
                     {
                         args.RetVal = AddNewline(shift);
+                        RequestScrollCursorToCenter();
                         return;
                     }
                     break;
                 case Gdk.Key.Tab:
                     QueueUrlHighlight(50);
                     args.RetVal = AddTab();
+                    RequestScrollCursorToCenter();
                     return;
                 case Gdk.Key.ISO_Left_Tab:
                     QueueUrlHighlight(50);
                     args.RetVal = RemoveTab();
+                    RequestScrollCursorToCenter();
                     return;
                 case Gdk.Key.BackSpace:
                     QueueUrlHighlight(50);
                     args.RetVal = BackspaceKeyHandler();
+                    RequestScrollCursorToCenter();
                     if ((bool)args.RetVal) return;
                     break;
                 case Gdk.Key.Delete:
                     QueueUrlHighlight(50);
                     args.RetVal = DeleteKeyHandler();
+                    RequestScrollCursorToCenter();
                     if ((bool)args.RetVal) return;
+                    break;
+                case Gdk.Key.Up:
+                case Gdk.Key.Down:
+                case Gdk.Key.KP_Up:
+                case Gdk.Key.KP_Down:
+                    RequestScrollCursorToCenter();
                     break;
                 case Gdk.Key.Escape:
                     if (searchHBox.Visible)
