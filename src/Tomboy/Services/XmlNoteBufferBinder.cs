@@ -122,6 +122,9 @@ namespace Tomboy.Services
 
         public static TextTag GetOrCreateDepthTag(TextBuffer buffer, int depth, Pango.Direction direction = Pango.Direction.Ltr)
         {
+            // Normalize non-RTL directions to Ltr
+            direction = (direction == Pango.Direction.Rtl) ? Pango.Direction.Rtl : Pango.Direction.Ltr;
+
             string tagName = $"depth:{depth}:{direction}";
             TextTag existing = buffer.TagTable.Lookup(tagName);
             if (existing != null) return existing;
@@ -129,7 +132,7 @@ namespace Tomboy.Services
             var depthTag = new TextTag(tagName)
             {
                 Indent = -14,
-                LeftMargin = direction == Pango.Direction.Ltr ? (depth + 1) * 25 : 0,
+                LeftMargin = direction == Pango.Direction.Rtl ? 0 : (depth + 1) * 25,
                 RightMargin = direction == Pango.Direction.Rtl ? (depth + 1) * 25 : 0,
                 PixelsBelowLines = 4,
                 Scale = Pango.Scale.Medium

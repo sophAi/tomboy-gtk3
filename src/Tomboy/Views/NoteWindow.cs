@@ -1410,7 +1410,10 @@ namespace Tomboy.Views
             {
                 Pango.Direction direction = Pango.Direction.Ltr;
                 if (start.Char.Length > 0 && !start.EndsLine())
-                    direction = Pango.Global.UnicharDirection(start.Char[0]);
+                {
+                    var charDir = Pango.Global.UnicharDirection(start.Char[0]);
+                    direction = (charDir == Pango.Direction.Rtl) ? Pango.Direction.Rtl : Pango.Direction.Ltr;
+                }
 
                 InsertBullet(ref start, 0, direction);
             }
@@ -1600,7 +1603,10 @@ namespace Tomboy.Views
 
                     Pango.Direction direction = prevDepth.Direction;
                     if (iter.Char != "\n" && iter.Char.Length > 0)
-                        direction = Pango.Global.UnicharDirection(iter.Char[0]);
+                    {
+                        var charDir = Pango.Global.UnicharDirection(iter.Char[0]);
+                        direction = (charDir == Pango.Direction.Rtl) ? Pango.Direction.Rtl : Pango.Direction.Ltr;
+                    }
 
                     InsertBullet(ref start, prevDepth.Depth, direction);
                 }
