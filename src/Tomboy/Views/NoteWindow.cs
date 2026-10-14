@@ -641,7 +641,14 @@ namespace Tomboy.Views
                         var mark = buf.InsertMark;
                         if (mark != null && mark.Handle != IntPtr.Zero)
                         {
-                            textView.ScrollToMark(mark, 0.0, true, 0.0, 0.5);
+                            if (Preferences.Current.EnableTypewriterScrolling)
+                            {
+                                textView.ScrollToMark(mark, 0.0, true, 0.0, 0.5);
+                            }
+                            else
+                            {
+                                textView.ScrollMarkOnscreen(mark);
+                            }
                         }
                     }
                 }
@@ -2050,6 +2057,10 @@ namespace Tomboy.Views
             ApplyCustomPreferences();
             InitLatexSession();
             QueueUrlHighlight(50);
+            if (Preferences.Current.EnableTypewriterScrolling)
+            {
+                RequestScrollCursorToCenter();
+            }
         }
 
         private void InitLatexSession()

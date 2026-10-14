@@ -11,6 +11,7 @@ namespace Tomboy.Services
         public bool EnableSpellchecking { get; set; } = true;
         public bool EnableWikiwords { get; set; } = false;
         public bool EnableAutoBulletedLists { get; set; } = true;
+        public bool EnableTypewriterScrolling { get; set; } = false;
         public bool EnableCustomFont { get; set; } = false;
         public string CustomFontFace { get; set; } = "Sans 11";
         public string NoteTitleColor { get; set; } = "#005A9E";

@@ -16,6 +16,7 @@ namespace Tomboy.Views
         private CheckButton checkSpell = null!;
         private CheckButton checkWikiWords = null!;
         private CheckButton checkAutoBullets = null!;
+        private CheckButton checkTypewriterScrolling = null!;
         private CheckButton checkCustomFont = null!;
         private FontButton fontButton = null!;
         private CheckButton checkSearchColor = null!;
@@ -156,6 +157,15 @@ namespace Tomboy.Views
                 Preferences.Current = c;
             };
             vbox.PackStart(checkAutoBullets, false, false, 0);
+
+            // 3.5. Typewriter scrolling (Center cursor while editing)
+            checkTypewriterScrolling = new CheckButton("啟用打字機捲動模式（編輯時游標垂直置中）(_T)") { Active = cfg.EnableTypewriterScrolling };
+            checkTypewriterScrolling.Toggled += (s, e) => {
+                var c = Preferences.Current;
+                c.EnableTypewriterScrolling = checkTypewriterScrolling.Active;
+                Preferences.Current = c;
+            };
+            vbox.PackStart(checkTypewriterScrolling, false, false, 0);
 
             // 4. Custom font
             var fontHBox = new HBox(false, 8);
