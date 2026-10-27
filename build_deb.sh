@@ -61,6 +61,8 @@ mkdir -p "$STAGING_DIR/usr/share/dbus-1/services"
 
 # 3. Compile and Publish Release Build
 echo "[3/6] Compiling and publishing self-contained Release build..."
+dotnet build "$SCRIPT_DIR/src/Tomboy.Latex/Tomboy.Latex.csproj" -c Release
+dotnet build "$SCRIPT_DIR/src/Tomboy/Tomboy.csproj" -c Release -r linux-x64
 dotnet publish "$SCRIPT_DIR/src/Tomboy/Tomboy.csproj" \
     -c Release \
     -r linux-x64 \

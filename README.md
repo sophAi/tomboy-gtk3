@@ -7,7 +7,12 @@ Modernized Linux desktop note-taking application ported to **.NET 8** and **GTK+
 ## 🌟 特色功能 (Features)
 
 - **現代化架構**：以 .NET 8 LTS 與 GtkSharp (GTK3) 重構，擺脫舊版 Mono 2.x 與 GTK2 依賴，相容 Linux Mint 21 / 22 / 23 與 Ubuntu 22.04 / 24.04 / 26.04+。
-- **系統匣圖示 (System Tray)**：完美支援 Linux Mint MATE Panel、Cinnamon 與 XFCE 系統匣，支援右鍵選單快速新建筆記、搜尋筆記與喜好設定。
+- **系統匣圖示與動態筆記選單 (System Tray & Note Menu)**：
+  - 完美支援 Linux Mint MATE Panel、Cinnamon 與 XFCE 系統匣。
+  - **滑鼠左鍵點選（或全域快速鍵 `<Alt>F12`）**：彈出原生 Tomboy 筆記選單，即時動態列出「最近修改筆記清單 (Recent Notes)」，點選任一筆記直接開啟或定焦該視窗。
+  - **滑鼠右鍵點選**：彈出完整功能選單，除了新建、搜尋、同步、偏好設定、關於與結束外，亦提供「🕒 最近筆記」子選單，確保左右鍵皆可快速存取最近筆記。
+  - **連動進階設定 (Min/Max Note Count)**：完整連動「偏好設定」→「進階」之「最近使用文件清單中顯示最小筆記數」與「最大筆記數」，比對原始 Tomboy 邏輯（優先納入釘選筆記、3 天內更動筆記，並在未達最小筆數時依修改時間遞補，上限為最大筆數），設定變更即時生效。
+  - 具備標題底線自動轉義（避免 GTK 誤判為快速鍵）與長標題自動截斷省略號（Ellipsify）。
 - **整合 LaTeX 數學公式渲染**：
   - 輸入 `\[ E = mc^2 \]` 自動排程渲染高品質數學公式影像。
   - 點選公式影像即時切換回 LaTeX 原始語法進行編輯，離開後自動重新渲染。

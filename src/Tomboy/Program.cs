@@ -355,6 +355,10 @@ Options:
                         win.OpenStartHereNote();
                     },
 
+                    OnOpenNote = (note) => {
+                        MainWindow.OpenNote(note);
+                    },
+
                     OnSearchNotes = () => {
                         var win = GetOrCreateMainWindow();
                         win.ShowAll();
@@ -414,7 +418,7 @@ Options:
             {
                 GlobalHotkeyService.Initialize(
                     showMenu: () => {
-                        instanceTray?.ShowContextMenu();
+                        instanceTray?.ShowNoteMenu();
                     },
                     startHere: () => {
                         var win = GetOrCreateMainWindow();
