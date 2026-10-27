@@ -48,7 +48,7 @@ namespace Tomboy.Views
             allNotesIcon = IconService.GetIcon("filter-note-all", 22);
             unfiledNotesIcon = IconService.GetIcon("filter-note-unfiled", 22);
             notebookIcon = IconService.GetIcon("notebook", 22);
-            noteIcon = IconService.GetIcon("note", 22) ?? IconService.GetIcon("tomboy", 22);
+            noteIcon = IconService.GetIcon("tomboy", 22) ?? IconService.GetIcon("note", 22);
 
             var tomboyAppIcon = IconService.GetIcon("tomboy", 48) ?? IconService.GetIcon("tomboy", 22);
             if (tomboyAppIcon != null)

@@ -62,12 +62,40 @@ namespace Tomboy.Services
             return false;
         }
 
-        private Pixbuf CreateFallbackTomboyPixbuf()
+        private Pixbuf CreateFallbackTomboyPixbuf(int size = 24)
         {
-            // Draw a vibrant 24x24 yellow Tomboy note icon dynamically
-            Pixbuf pixbuf = new Pixbuf(Colorspace.Rgb, true, 8, 24, 24);
+            // Draw a vibrant yellow Tomboy note icon dynamically
+            Pixbuf pixbuf = new Pixbuf(Colorspace.Rgb, true, 8, size, size);
             pixbuf.Fill(0xFFFF88FF); // Tomboy Note Yellow
             return pixbuf;
+        }
+
+        private Pixbuf? tomboyNoteIcon;
+
+        private Pixbuf GetTomboyNoteIcon()
+        {
+            if (tomboyNoteIcon == null)
+            {
+                var pb = IconService.GetIcon("tomboy-16", 16) ??
+                         IconService.GetIcon("tomboy", 16) ??
+                         IconService.GetIcon("tomboy-48", 16);
+                if (pb != null)
+                {
+                    if (pb.Width != 16 || pb.Height != 16)
+                    {
+                        tomboyNoteIcon = pb.ScaleSimple(16, 16, InterpType.Bilinear);
+                    }
+                    else
+                    {
+                        tomboyNoteIcon = pb;
+                    }
+                }
+                else
+                {
+                    tomboyNoteIcon = CreateFallbackTomboyPixbuf(16);
+                }
+            }
+            return tomboyNoteIcon;
         }
 
         public void ShowNoteMenu()
@@ -137,7 +165,7 @@ namespace Tomboy.Services
 
             var item = new MenuItem();
             var box = new Box(Orientation.Horizontal, 6);
-            var iconPb = IconService.GetIcon("note", 16);
+            var iconPb = GetTomboyNoteIcon();
             if (iconPb != null)
             {
                 box.PackStart(new Image(iconPb), false, false, 0);
