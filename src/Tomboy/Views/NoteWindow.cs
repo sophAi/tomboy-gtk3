@@ -1760,13 +1760,7 @@ namespace Tomboy.Views
                 };
 
                 TextIter iter = buf.GetIterAtMark(buf.InsertMark);
-
-                if (!iter.StartsLine())
-                {
-                    buf.Insert(ref iter, "\n");
-                }
                 buf.InsertWithTags(ref iter, timeText, datetimeTag);
-                buf.Insert(ref iter, "\n");
 
                 QueueSave(300);
             }
@@ -2222,6 +2216,19 @@ namespace Tomboy.Views
             {
                 isUpdatingNotebookCombo = false;
             }
+        }
+
+        public void ReloadNote(NoteItem updatedNote)
+        {
+            note = updatedNote;
+            Title = updatedNote.Title;
+            var allTitles = NoteStorage.GetAllNoteTitles();
+            undoManager.FreezeUndo();
+            textView.Buffer.Text = string.Empty;
+            XmlNoteBufferBinder.EnsureCommonTags(textView.Buffer);
+            XmlNoteBufferBinder.LoadXmlToBuffer(textView.Buffer, updatedNote.XmlContent, allTitles, updatedNote.Title);
+            undoManager.ThawUndo();
+            undoManager.ClearUndoHistory();
         }
     }
 }

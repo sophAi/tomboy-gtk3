@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Text.RegularExpressions;
+using System.Xml;
 using Tomboy.Models;
 using Tomboy.Views;
 
@@ -127,6 +129,9 @@ namespace Tomboy.Services
                     client.LastSynchronizedRevision = -1;
                 }
 
+                int initialLastSyncRev = client.LastSynchronizedRevision;
+                var downloadedGuids = new HashSet<string>();
+
                 var localNotes = NoteStorage.LoadAllNotes().ToDictionary(n => n.Guid, n => n);
                 var serverNotes = server.ServerNotes;
                 var deletedNotes = client.DeletedNotes;
@@ -163,6 +168,7 @@ namespace Tomboy.Services
                             var note = NoteItem.LoadFromFile(localFilePath);
                             localNotes[guid] = note;
                             client.SetRevision(guid, rev);
+                            downloadedGuids.Add(guid);
                             downloaded++;
                         }
                     }
@@ -175,45 +181,59 @@ namespace Tomboy.Services
                         if (rev > clientRev)
                         {
                             // Server has a newer revision!
-                            bool localModified = localNote.LastMetadataChangeDate > client.LastSyncDate || localNote.LastChangeDate > client.LastSyncDate;
+                            string? xml = server.GetNoteXml(guid, rev);
+                            if (!string.IsNullOrEmpty(xml))
+                            {
+                                bool localModified = localNote.LastMetadataChangeDate > client.LastSyncDate || localNote.LastChangeDate > client.LastSyncDate;
+                                bool basicallyEqual = BasicallyEqualTo(localNote, xml);
 
-                            if (!localModified)
-                            {
-                                // Local was unmodified, simply update from server
-                                string? xml = server.GetNoteXml(guid, rev);
-                                if (!string.IsNullOrEmpty(xml))
+                                if (!localModified || basicallyEqual)
                                 {
+                                    // Local was unmodified, or content is basically equal: simply update from server
                                     File.WriteAllText(localNote.FilePath, xml);
-                                    localNotes[guid] = NoteItem.LoadFromFile(localNote.FilePath);
+                                    var updatedNote = NoteItem.LoadFromFile(localNote.FilePath);
+                                    localNotes[guid] = updatedNote;
                                     client.SetRevision(guid, rev);
+                                    downloadedGuids.Add(guid);
                                     downloaded++;
-                                }
-                            }
-                            else
-                            {
-                                // Both local and server modified -> Conflict!
-                                if (conflictBehavior == 1 || conflictBehavior == 0)
-                                {
-                                    // Backup local version with conflict title
-                                    var backupNote = new NoteItem
+                                    GLib.Idle.Add(() =>
                                     {
-                                        Guid = Guid.NewGuid().ToString(),
-                                        Title = $"{localNote.Title} (衝突備份 {DateTime.Now:yyyy-MM-dd HHmmss})",
-                                        XmlContent = localNote.XmlContent.Replace($"<note-title>{localNote.Title}</note-title>", $"<note-title>{localNote.Title} (衝突備份 {DateTime.Now:yyyy-MM-dd HHmmss})</note-title>")
-                                    };
-                                    backupNote.Save(localDir);
-                                    localNotes[backupNote.Guid] = backupNote;
-                                    conflictsResolved++;
+                                        MainWindow.ReloadOpenNoteWindow(updatedNote);
+                                        return false;
+                                    });
                                 }
-
-                                // Apply server version
-                                string? xml = server.GetNoteXml(guid, rev);
-                                if (!string.IsNullOrEmpty(xml))
+                                else
                                 {
+                                    // Both local and server modified with real content difference -> Conflict!
+                                    if (conflictBehavior == 1 || conflictBehavior == 0)
+                                    {
+                                        // Backup local version with conflict title
+                                        string backupTitle = $"{localNote.Title} (衝突備份 {DateTime.Now:yyyy-MM-dd HHmmss})";
+                                        var backupNote = new NoteItem
+                                        {
+                                            Guid = Guid.NewGuid().ToString(),
+                                            Title = backupTitle,
+                                            XmlContent = localNote.XmlContent.Replace($"<note-title>{localNote.Title}</note-title>", $"<note-title>{backupTitle}</note-title>"),
+                                            Notebook = localNote.Notebook,
+                                            Tags = new List<string>(localNote.Tags)
+                                        };
+                                        backupNote.Save(localDir);
+                                        localNotes[backupNote.Guid] = backupNote;
+                                        conflictsResolved++;
+                                    }
+
+                                    // Apply server version
                                     File.WriteAllText(localNote.FilePath, xml);
-                                    localNotes[guid] = NoteItem.LoadFromFile(localNote.FilePath);
+                                    var updatedNote = NoteItem.LoadFromFile(localNote.FilePath);
+                                    localNotes[guid] = updatedNote;
                                     client.SetRevision(guid, rev);
+                                    downloadedGuids.Add(guid);
                                     downloaded++;
+                                    GLib.Idle.Add(() =>
+                                    {
+                                        MainWindow.ReloadOpenNoteWindow(updatedNote);
+                                        return false;
+                                    });
                                 }
                             }
                         }
@@ -246,9 +266,14 @@ namespace Tomboy.Services
                 int newRev = server.LatestRevision + 1;
                 foreach (var localNote in localNotes.Values)
                 {
+                    // Skip notes that were downloaded or updated from server in this session
+                    if (downloadedGuids.Contains(localNote.Guid))
+                        continue;
+
                     int clientRev = client.GetRevision(localNote.Guid);
                     bool isNew = clientRev == -1;
-                    bool isModified = localNote.LastMetadataChangeDate > client.LastSyncDate || localNote.LastChangeDate > client.LastSyncDate;
+                    bool isModified = (initialLastSyncRev < 0 || clientRev <= initialLastSyncRev) &&
+                                      (localNote.LastMetadataChangeDate > client.LastSyncDate || localNote.LastChangeDate > client.LastSyncDate);
 
                     if (isNew || isModified)
                     {
@@ -319,6 +344,64 @@ namespace Tomboy.Services
             }
 
             return result;
+        }
+
+        public static bool BasicallyEqualTo(NoteItem localNote, string serverXml)
+        {
+            if (string.IsNullOrWhiteSpace(serverXml))
+                return false;
+
+            try
+            {
+                var doc = new XmlDocument();
+                doc.LoadXml(serverXml);
+
+                string serverTitle = doc.SelectSingleNode("//*[local-name()='title']")?.InnerText?.Trim() ?? string.Empty;
+                if (localNote.Title.Trim() != serverTitle)
+                    return false;
+
+                var serverTags = new HashSet<string>();
+                var tagNodes = doc.SelectNodes("//*[local-name()='tags']/*[local-name()='tag']");
+                if (tagNodes != null)
+                {
+                    foreach (XmlNode tagNode in tagNodes)
+                    {
+                        if (!string.IsNullOrWhiteSpace(tagNode.InnerText))
+                            serverTags.Add(tagNode.InnerText.Trim());
+                    }
+                }
+
+                var localTags = new HashSet<string>(localNote.Tags.Select(t => t.Trim()));
+                if (!serverTags.SetEquals(localTags))
+                    return false;
+
+                string localInner = GetInnerContent(localNote.XmlContent);
+                string serverInner = GetInnerContent(serverXml);
+
+                return localInner == serverInner;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static string GetInnerContent(string xmlContent)
+        {
+            if (string.IsNullOrEmpty(xmlContent))
+                return string.Empty;
+
+            const string pattern = @"<note-content[^>]*>(?<inner>.*)</note-content>";
+            var match = Regex.Match(
+                xmlContent,
+                pattern,
+                RegexOptions.Singleline
+            );
+
+            if (!match.Success)
+                return string.Empty;
+
+            return match.Groups["inner"].Value.Replace("\r\n", "\n").Trim();
         }
     }
 }

@@ -1217,6 +1217,14 @@ namespace Tomboy.Views
             }
         }
 
+        public static void ReloadOpenNoteWindow(NoteItem updatedNote)
+        {
+            if (openNoteWindows.TryGetValue(updatedNote.Guid, out var win) && win != null && win.Handle != IntPtr.Zero)
+            {
+                win.ReloadNote(updatedNote);
+            }
+        }
+
         public void OpenStartHereNote()
         {
             var startHere = allNotes.FirstOrDefault(n => n.Title == "Start Here" || n.Title == "從這裡開始");
