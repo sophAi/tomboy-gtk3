@@ -104,7 +104,10 @@ namespace Tomboy.Services
                 tag.Weight = Weight.Bold;
             });
             RegisterTag(table, "latex_code", tag => {
-                tag.Invisible = true;
+                // Do NOT use Invisible = true due to upstream GTK3 bug in gtktextlayout/gtktextiter.
+                // Size = 1 (1 Pango unit = 1/1024 pt) shrinks text to 0 width safely.
+                tag.Size = 1;
+                tag.Editable = false;
             });
             RegisterTag(table, "latex_image", tag => {
             });

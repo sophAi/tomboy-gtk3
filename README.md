@@ -64,6 +64,11 @@ Modernized Linux desktop note-taking application ported to **.NET 8** and **GTK+
   - 支援選取多個筆記（Ctrl / Shift 多選）批次拖曳至左側筆記本列指定筆記本。
   - 支援選取多個筆記後點擊「刪除」按鈕或鍵盤 Delete 進行批次刪除與確認。
   - 支援筆記本篩選分類，筆記刪除後自動保持在目前選擇的筆記本。
+- **跨筆記複製貼上自動保持縮排清單格式 (Bulleted / Indented List Paste Preservation)**：
+  - 完美支援從任一筆記複製含有項目符號與多層級縮排（`•`、`◦`、`‣` 或多層 Tab/空格清單）的段落，貼入其他筆記時自動解析其層級深度並精準重建 `depth` 縮排標籤與左邊距，徹底解決跨筆記複製時縮排格式丟失或變成一般純文字的問題。
+- **LaTeX 穩定性強化與 GTK3 雷區防護**：
+  - 移除原 `latex_code` 隱藏標籤之 `Invisible = true`，改以極微字級 `Size = 1` 縮放隱藏，徹底根除 GTK 3 底層排版引擎（`gtktextlayout` / `gtktextiter`）因可見長度計算錯誤而引發的 `Byte index off the end of the line` 致命崩潰。
+  - 強化公式語法過濾，要求候選字串內部必須包含常見 LaTeX 數學運算或符號（如 `\frac`, `^`, `_`, `=`, `+`, `-` 等），避免一般技術路徑（如 `\(x86\)`）或跳脫字元被誤判為公式。
 - **原生行內插入時間戳記 (Insert Timestamp, `Ctrl+D`)**：
   - 完全比對原始 Tomboy 行內插入行為，於當前游標所在處直接插入自訂格式之時間戳記標籤（`<datetime>`），無論在一般內文或在縮排項目清單（Bullet List）中插入，皆維持行內連續輸入（Inline），前後絕不產生多餘之強制跳行或換行。
 - **SSH 遠端雙向同步與原生避免衝突機制 (SSH Sync & Conflict Prevention)**：

@@ -559,7 +559,7 @@ namespace Tomboy.Views
                                 else if (isCut)
                                     newMi.Activated += (ms, me) => latexSession.HandleCut();
                                 else if (isPaste)
-                                    newMi.Activated += (ms, me) => latexSession.HandlePaste();
+                                    newMi.Activated += (ms, me) => HandlePaste();
 
                                 newMi.Show();
                                 menu.Remove(mi);
@@ -1173,7 +1173,7 @@ namespace Tomboy.Views
                         break;
                     case Gdk.Key.v:
                     case Gdk.Key.V:
-                        if (latexSession != null && latexSession.HandlePaste())
+                        if (HandlePaste())
                         {
                             args.RetVal = true;
                             return;
@@ -1724,6 +1724,107 @@ namespace Tomboy.Views
             if (string.IsNullOrEmpty(text) || text.Length < 2) return false;
             char first = text[0];
             return (first == '•' || first == '◦' || first == '‣') && text[1] == ' ';
+        }
+
+        public bool HandlePaste()
+        {
+            TextBuffer buf = textView.Buffer;
+            var clipboard = Clipboard.Get(Gdk.Selection.Clipboard);
+            string? text = clipboard.WaitForText();
+            if (string.IsNullOrEmpty(text)) return false;
+
+            text = text.Replace("\uFFFC", "");
+            if (text.Length == 0) return true;
+
+            // Check if text contains bulleted or indented lines
+            if (!text.Contains('•') && !text.Contains('◦') && !text.Contains('‣'))
+            {
+                // Let normal paste or LatexSession handle if no bullets
+                if (latexSession != null && latexSession.HandlePaste())
+                    return true;
+                return false;
+            }
+
+            // If LatexSession is active and has math, let's delete any selection first
+            if (buf.GetSelectionBounds(out TextIter selStart, out TextIter selEnd))
+            {
+                buf.Delete(ref selStart, ref selEnd);
+            }
+
+            InsertBulletedText(text);
+            QueueSave(500);
+            return true;
+        }
+
+        private void InsertBulletedText(string text)
+        {
+            TextBuffer buf = textView.Buffer;
+            string normalized = text.Replace("\r\n", "\n").Replace("\r", "\n");
+            string[] lines = normalized.Split('\n');
+
+            for (int i = 0; i < lines.Length; i++)
+            {
+                string line = lines[i];
+                TextIter cursor = buf.GetIterAtMark(buf.InsertMark);
+
+                int depth = -1;
+                string content = line;
+
+                // Match Tomboy bullet styles
+                if (line.Length >= 2 && line[1] == ' ' && (line[0] == '•' || line[0] == '◦' || line[0] == '‣'))
+                {
+                    depth = line[0] switch
+                    {
+                        '•' => 0,
+                        '◦' => 1,
+                        '‣' => 2,
+                        _ => 0
+                    };
+                    content = line.Substring(2);
+                }
+                else
+                {
+                    // Also support tab-indented bullets (e.g. "  - " or "\t* ")
+                    int ws = 0;
+                    while (ws < line.Length && (line[ws] == ' ' || line[ws] == '\t')) ws++;
+                    if (ws < line.Length - 1 && line[ws + 1] == ' ' && (line[ws] == '•' || line[ws] == '◦' || line[ws] == '‣' || line[ws] == '-' || line[ws] == '*'))
+                    {
+                        depth = Math.Min(4, ws / 2);
+                        content = line.Substring(ws + 2);
+                    }
+                }
+
+                if (depth >= 0)
+                {
+                    // If cursor is not at line start, insert a newline first
+                    if (cursor.LineOffset != 0)
+                    {
+                        buf.Insert(ref cursor, "\n");
+                        cursor = buf.GetIterAtMark(buf.InsertMark);
+                    }
+
+                    Pango.Direction dir = Pango.Direction.Ltr;
+                    if (content.Length > 0)
+                    {
+                        var charDir = Pango.Global.UnicharDirection(content[0]);
+                        dir = (charDir == Pango.Direction.Rtl) ? Pango.Direction.Rtl : Pango.Direction.Ltr;
+                    }
+
+                    InsertBullet(ref cursor, depth, dir);
+                    cursor = buf.GetIterAtMark(buf.InsertMark);
+                    buf.Insert(ref cursor, content);
+                }
+                else
+                {
+                    buf.Insert(ref cursor, content);
+                }
+
+                if (i < lines.Length - 1)
+                {
+                    cursor = buf.GetIterAtMark(buf.InsertMark);
+                    buf.Insert(ref cursor, "\n");
+                }
+            }
         }
 
         #endregion

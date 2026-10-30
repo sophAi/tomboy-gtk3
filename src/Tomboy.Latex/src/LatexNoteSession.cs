@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.RegularExpressions;
 using Gtk;
 
 namespace Tomboy.Latex
@@ -53,7 +54,10 @@ namespace Tomboy.Latex
             {
                 codeTag = new TextTag("latex_code")
                 {
-                    Invisible = true
+                    // Do NOT use Invisible = true due to upstream GTK3 bug in gtktextlayout/gtktextiter.
+                    // Size = 1 (1 Pango unit = 1/1024 pt) shrinks text to 0 width safely.
+                    Size = 1,
+                    Editable = false
                 };
                 table.Add(codeTag);
             }
@@ -427,6 +431,57 @@ namespace Tomboy.Latex
             }
         }
 
+        // Common LaTeX math symbols/commands: requires at least one math indicator
+        // e.g., \frac, \sqrt, \alpha, ^, _, \sum, \int, \pm, \times, \leq, \geq, =, +, -, \partial, \cdot, etc.
+        private static readonly Regex CommonMathSymbolsRegex = new Regex(
+            @"(\\[a-zA-Z]+|[_^=+\-*/<>|\\]|\\pm|\\times|\\div|\\cdot|\\sum|\\int|\\prod|\\sqrt|\\frac)",
+            RegexOptions.Compiled);
+
+        private static bool ContainsMathSymbols(string innerCode)
+        {
+            if (string.IsNullOrWhiteSpace(innerCode)) return false;
+            return CommonMathSymbolsRegex.IsMatch(innerCode);
+        }
+
+        private bool FindNextValidPair(
+            TextIter startFrom,
+            string openDelim,
+            string closeDelim,
+            out TextIter matchStart,
+            out TextIter matchEnd)
+        {
+            TextBuffer buf = textView.Buffer;
+            matchStart = buf.EndIter;
+            matchEnd = buf.EndIter;
+
+            TextIter cur = startFrom;
+            while (cur.Offset < buf.CharCount)
+            {
+                if (!cur.ForwardSearch(openDelim, 0, out TextIter oStart, out TextIter oEnd, buf.EndIter))
+                    return false;
+
+                if (!oEnd.ForwardSearch(closeDelim, 0, out TextIter cStart, out TextIter cEnd, buf.EndIter))
+                    return false;
+
+                if (cEnd.Offset - oStart.Offset <= 2000)
+                {
+                    string inner = buf.GetText(oEnd, cStart, true);
+                    if (ContainsMathSymbols(inner) && (openDelim != "$" || !inner.Contains('\n')))
+                    {
+                        matchStart = oStart;
+                        matchEnd = cEnd;
+                        return true;
+                    }
+                }
+
+                if (oStart.Offset + 1 >= buf.CharCount)
+                    break;
+                cur = buf.GetIterAtOffset(oStart.Offset + 1);
+            }
+
+            return false;
+        }
+
         private bool FindMathCode(TextIter pos, bool dollarEnabled, out TextIter matchStart, out TextIter matchEnd)
         {
             TextBuffer buf = textView.Buffer;
@@ -435,8 +490,7 @@ namespace Tomboy.Latex
             bool found = false;
 
             // 1. Search for display math: \[ ... \]
-            if (pos.ForwardSearch("\\[", 0, out TextIter dStart, out TextIter dAfterStart, buf.EndIter) &&
-                dAfterStart.ForwardSearch("\\]", 0, out TextIter dBeforeEnd, out TextIter dEnd, buf.EndIter))
+            if (FindNextValidPair(pos, "\\[", "\\]", out TextIter dStart, out TextIter dEnd))
             {
                 matchStart = dStart;
                 matchEnd = dEnd;
@@ -444,8 +498,7 @@ namespace Tomboy.Latex
             }
 
             // 2. Search for inline math: \( ... \)
-            if (pos.ForwardSearch("\\(", 0, out TextIter iStart, out TextIter iAfterStart, buf.EndIter) &&
-                iAfterStart.ForwardSearch("\\)", 0, out TextIter iBeforeEnd, out TextIter iEnd, buf.EndIter))
+            if (FindNextValidPair(pos, "\\(", "\\)", out TextIter iStart, out TextIter iEnd))
             {
                 if (!found || iStart.Offset < matchStart.Offset)
                 {
@@ -456,9 +509,7 @@ namespace Tomboy.Latex
             }
 
             // 3. Search for dollar math: $ ... $ (if enabled)
-            if (dollarEnabled &&
-                pos.ForwardSearch("$", 0, out TextIter dlStart, out TextIter dlAfterStart, buf.EndIter) &&
-                dlAfterStart.ForwardSearch("$", 0, out TextIter dlBeforeEnd, out TextIter dlEnd, buf.EndIter))
+            if (dollarEnabled && FindNextValidPair(pos, "$", "$", out TextIter dlStart, out TextIter dlEnd))
             {
                 if (!found || dlStart.Offset < matchStart.Offset)
                 {
