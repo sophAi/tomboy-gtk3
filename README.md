@@ -207,6 +207,35 @@ sudo apt-get install -f   # 若缺少基礎 GTK 執行套件時自動補齊
 
 ---
 
+## 🤖 Antigravity / Gemini CLI 歸檔技能 (tomboy-note Skill)
+
+本專案隨附 **`tomboy-note`** 技能套件，可供 **Google Antigravity / Gemini CLI** 在任何日常技術對話中，一鍵將除錯紀錄、架構討論或工作流程自動總結歸檔為 Tomboy 原生筆記。
+
+### 特性與亮點：
+- **原生 XML 相容**：自動產生符合 Tomboy 規範之 `<note-content>`、UUID、時區時間戳記與筆記本標籤。
+- **排版自動對齊**：自動將 Markdown 轉換為超大字級（`#`）、大字級（`##`）、巢狀項目符號清單（`•`、`◦`、`‣`）、粗體、斜體與等寬代碼。
+- **LaTeX 數學公式整合**：
+  - 自動將 Markdown 區塊公式 `$$...$$` 與行內公式 `$formula$` 轉換為 Tomboy 原生 `\[...\]` 語法。
+  - 具備語法佔位保護，公式內部下標 `_` 與乘號 `*` 絕不被誤判為斜體／粗體。
+- **無感調用**：安裝後自動加入全域規則，在任何新對話中只需以自然語言提及「存入 Tomboy 筆記」即可自動觸發。
+
+### 一鍵安裝技能：
+在已安裝 Antigravity / Gemini CLI 的電腦上，於本專案目錄下執行：
+```bash
+./install_skill.sh
+```
+
+### 移除技能：
+```bash
+./install_skill.sh --uninstall
+```
+
+### 使用範例（於 Antigravity 對話中）：
+> *「請將剛剛討論的工作流程歸檔至 Tomboy 筆記，放在『共用 - 自由軟體』筆記本」*
+> *「請把剛才排查 GTK3 記憶體越界的紀錄存成一篇 Tomboy 筆記」*
+
+---
+
 ## 📄 授權條款 (License)
 
 本專案遵循 GNU General Public License v2.0 (GPL-2.0) 授權發佈。詳細內容請參閱 [LICENSE](LICENSE) 檔案。
