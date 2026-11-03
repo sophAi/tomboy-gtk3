@@ -75,7 +75,8 @@ namespace Tomboy.Views
 
             toolbar.Insert(new SeparatorToolItem(), -1);
 
-            Pixbuf? syncIcon = IconService.GetIcon("drive-harddisk", 22) ?? 
+            Pixbuf? syncIcon = IconService.GetIcon("network-transmit-receive", 22) ?? 
+                               IconService.GetIcon("drive-harddisk", 22) ??
                                IconService.GetIcon("network-server", 22);
             ToolButton syncBtn;
             if (syncIcon != null)
