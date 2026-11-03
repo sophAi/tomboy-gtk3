@@ -260,7 +260,7 @@ namespace Tomboy.Services
 
             menu.Append(new SeparatorMenuItem());
 
-            var syncItem = new MenuItem("🔄 S_ynchronize Notes");
+            var syncItem = new MenuItem("🗄️ S_ynchronize Notes");
             syncItem.Activated += (s, e) => OnSyncNotes?.Invoke();
             menu.Append(syncItem);
 

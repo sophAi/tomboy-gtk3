@@ -69,7 +69,23 @@ namespace Tomboy.Views
             newNoteBtn.Clicked += OnNewNoteClicked;
             toolbar.Insert(newNoteBtn, -1);
 
-            var syncBtn = new ToolButton(Stock.Refresh) { Label = "Sync", TooltipText = "Synchronize Notes (Ctrl+S)" };
+            var refreshBtn = new ToolButton(Stock.Refresh) { Label = "Refresh", TooltipText = "Refresh Notes List (F5 / Ctrl+R)" };
+            refreshBtn.Clicked += (s, e) => RefreshNotes();
+            toolbar.Insert(refreshBtn, -1);
+
+            toolbar.Insert(new SeparatorToolItem(), -1);
+
+            Pixbuf? syncIcon = IconService.GetIcon("drive-harddisk", 22) ?? 
+                               IconService.GetIcon("network-server", 22);
+            ToolButton syncBtn;
+            if (syncIcon != null)
+            {
+                syncBtn = new ToolButton(new Image(syncIcon), "Sync") { TooltipText = "Synchronize Notes (Ctrl+S)" };
+            }
+            else
+            {
+                syncBtn = new ToolButton(Stock.Network) { Label = "Sync", TooltipText = "Synchronize Notes (Ctrl+S)" };
+            }
             syncBtn.Clicked += (s, e) => OnSyncAction();
             toolbar.Insert(syncBtn, -1);
 
@@ -320,6 +336,21 @@ namespace Tomboy.Views
             return true;
         }
 
+        protected override bool OnKeyPressEvent(Gdk.EventKey ev)
+        {
+            if (ev.Key == Gdk.Key.F5 || (ev.Key == Gdk.Key.r && (ev.State & ModifierType.ControlMask) != 0))
+            {
+                RefreshNotes();
+                return true;
+            }
+            if (ev.Key == Gdk.Key.s && (ev.State & ModifierType.ControlMask) != 0)
+            {
+                OnSyncAction();
+                return true;
+            }
+            return base.OnKeyPressEvent(ev);
+        }
+
         private MenuBar CreateMenuBar()
         {
             var menuBar = new MenuBar();
@@ -332,7 +363,11 @@ namespace Tomboy.Views
             newNoteItem.Activated += OnNewNoteClicked;
             fileMenu.Append(newNoteItem);
 
-            var syncItem = new MenuItem("🔄 _Sync Notes");
+            var refreshItem = new MenuItem("🔄 _Refresh Notes");
+            refreshItem.Activated += (s, e) => RefreshNotes();
+            fileMenu.Append(refreshItem);
+
+            var syncItem = new MenuItem("🗄️ _Sync Notes");
             syncItem.Activated += (s, e) => OnSyncAction();
             fileMenu.Append(syncItem);
 
