@@ -149,10 +149,14 @@ def markdown_to_tomboy_content(title, md_body):
 
     def close_lists_to_depth(target_depth):
         nonlocal current_list_depth
+        if current_list_depth <= target_depth:
+            return ""
         res = []
         while current_list_depth > target_depth:
             res.append("</list-item></list>")
             current_list_depth -= 1
+        if target_depth == 0:
+            res.append("\n")
         return "".join(res)
 
     for line in lines:
@@ -171,11 +175,11 @@ def markdown_to_tomboy_content(title, md_body):
             level = len(heading_match.group(1))
             h_text = parse_markdown_inlines(heading_match.group(2))
             if level == 1:
-                output.append(f"\n<size:huge>{h_text}</size:huge>\n")
+                output.append(f"\n<size:huge>{h_text}</size:huge>\n\n")
             elif level == 2:
-                output.append(f"\n<size:large>{h_text}</size:large>\n")
+                output.append(f"\n<size:large>{h_text}</size:large>\n\n")
             else:
-                output.append(f"\n<bold>{h_text}</bold>\n")
+                output.append(f"\n<bold>{h_text}</bold>\n\n")
             continue
 
         # Check Bullet Lists (•, ◦, ‣, -, *, + or indented)
@@ -186,33 +190,35 @@ def markdown_to_tomboy_content(title, md_body):
             item_text = parse_markdown_inlines(list_match.group(3))
 
             # Determine depth (1-based for XML <list>)
-            depth = 1
+            spaces = len(indent_str.replace('\t', '    '))
+            space_depth = 1 + (spaces // 2)
             if bullet == '•':
-                depth = 1
+                depth = max(1, space_depth)
             elif bullet == '◦':
-                depth = 2
+                depth = max(2, space_depth)
             elif bullet == '‣':
-                depth = 3
+                depth = max(3, space_depth)
             else:
-                spaces = len(indent_str.replace('\t', '    '))
-                depth = 1 + (spaces // 2)
+                depth = space_depth
 
             if depth > current_list_depth:
-                # Open nested lists
+                # Open nested lists (add newline if transitioning from parent item text into nested list)
+                if current_list_depth > 0:
+                    output.append("\n")
                 while current_list_depth < depth:
                     output.append("<list><list-item dir=\"ltr\">")
                     current_list_depth += 1
                 output.append(item_text)
             elif depth == current_list_depth:
-                # Same depth: close previous item and start next
-                output.append("</list-item><list-item dir=\"ltr\">")
+                # Same depth: newline before closing previous item and starting next
+                output.append("\n</list-item><list-item dir=\"ltr\">")
                 output.append(item_text)
             else:
-                # Lesser depth: close down
+                # Lesser depth: close nested lists, then newline before closing parent item and starting next
                 while current_list_depth > depth:
                     output.append("</list-item></list>")
                     current_list_depth -= 1
-                output.append("</list-item><list-item dir=\"ltr\">")
+                output.append("\n</list-item><list-item dir=\"ltr\">")
                 output.append(item_text)
             continue
 

@@ -210,8 +210,7 @@ namespace Tomboy.Services
             var stringReader = new StringReader(xmlContent);
             using var xml = new XmlTextReader(stringReader) { Namespaces = false, WhitespaceHandling = WhitespaceHandling.All };
 
-            int offset = 0;
-            var stack = new Stack<(int Start, TextTag? Tag)>();
+            var stack = new Stack<(TextMark StartMark, TextTag? Tag)>();
             int currentDepth = -1;
             var listStack = new Stack<bool>();
 
@@ -220,79 +219,93 @@ namespace Tomboy.Services
                 switch (xml.NodeType)
                 {
                     case XmlNodeType.Element:
-                        string elementName = xml.Name.ToLowerInvariant();
-                        if (elementName == "note-content") break;
+                        {
+                            string elementName = xml.Name.ToLowerInvariant();
+                            if (elementName == "note-content") break;
 
-                        if (elementName == "list")
-                        {
-                            currentDepth++;
-                            break;
-                        }
-                        else if (elementName == "list-item")
-                        {
-                            if (currentDepth >= 0)
+                            if (elementName == "list")
                             {
-                                Pango.Direction dir = xml.GetAttribute("dir") == "rtl" ? Pango.Direction.Rtl : Pango.Direction.Ltr;
-                                TextTag depthTag = GetOrCreateDepthTag(buffer, currentDepth, dir);
-                                stack.Push((offset, depthTag));
-                                listStack.Push(false);
+                                currentDepth++;
+                                break;
                             }
+                            else if (elementName == "list-item")
+                            {
+                                if (currentDepth >= 0)
+                                {
+                                    Pango.Direction dir = xml.GetAttribute("dir") == "rtl" ? Pango.Direction.Rtl : Pango.Direction.Ltr;
+                                    TextTag depthTag = GetOrCreateDepthTag(buffer, currentDepth, dir);
+                                    TextMark mark = buffer.CreateMark(null, buffer.EndIter, true);
+                                    stack.Push((mark, depthTag));
+                                    listStack.Push(false);
+                                }
+                                break;
+                            }
+
+                            TextTag? tag = MapElementToTag(buffer, elementName);
+                            TextMark startMark = buffer.CreateMark(null, buffer.EndIter, true);
+                            stack.Push((startMark, tag));
                             break;
                         }
-
-                        TextTag? tag = MapElementToTag(buffer, elementName);
-                        stack.Push((offset, tag));
-                        break;
 
                     case XmlNodeType.Text:
                     case XmlNodeType.Whitespace:
                     case XmlNodeType.SignificantWhitespace:
-                        string textVal = xml.Value;
-                        TextIter insertAt = buffer.GetIterAtOffset(offset);
-                        buffer.Insert(ref insertAt, textVal);
-                        offset += textVal.Length;
-
-                        if (listStack.Count > 0)
                         {
-                            listStack.Pop();
-                            listStack.Push(true);
-                        }
-                        break;
+                            string textVal = xml.Value;
+                            TextIter insertAt = buffer.EndIter;
+                            buffer.Insert(ref insertAt, textVal);
 
-                    case XmlNodeType.EndElement:
-                        string endElement = xml.Name.ToLowerInvariant();
-                        if (endElement == "note-content") break;
-
-                        if (endElement == "list")
-                        {
-                            currentDepth--;
+                            if (listStack.Count > 0)
+                            {
+                                listStack.Pop();
+                                listStack.Push(true);
+                            }
                             break;
                         }
 
-                        if (stack.Count > 0)
+                    case XmlNodeType.EndElement:
                         {
-                            var (tagStart, tagInstance) = stack.Pop();
-                            if (tagInstance != null && tagInstance.Name != null && tagInstance.Name.StartsWith("depth:") && listStack.Count > 0 && listStack.Pop())
-                            {
-                                TextIter applyStart = buffer.GetIterAtOffset(tagStart);
-                                var parts = tagInstance.Name.Split(':');
-                                int d = (parts.Length >= 2 && int.TryParse(parts[1], out int parsedD)) ? parsedD : 0;
-                                char bulletChar = IndentBullets[d % IndentBullets.Length];
-                                string bulletText = $"{bulletChar} ";
+                            string endElement = xml.Name.ToLowerInvariant();
+                            if (endElement == "note-content") break;
 
-                                // Insert bullet specifically with depthTag (tag ONLY on the bullet characters)
-                                buffer.InsertWithTags(ref applyStart, bulletText, tagInstance);
-                                offset += bulletText.Length;
-                            }
-                            else if (tagInstance != null)
+                            if (endElement == "list")
                             {
-                                TextIter applyStart = buffer.GetIterAtOffset(tagStart);
-                                TextIter applyEnd = buffer.GetIterAtOffset(offset);
-                                buffer.ApplyTag(tagInstance, applyStart, applyEnd);
+                                currentDepth--;
+                                break;
                             }
+
+                            if (stack.Count > 0)
+                            {
+                                var (tagStartMark, tagInstance) = stack.Pop();
+                                if (tagInstance != null && tagInstance.Name != null && tagInstance.Name.StartsWith("depth:") && listStack.Count > 0 && listStack.Pop())
+                                {
+                                    TextIter applyStart = buffer.GetIterAtMark(tagStartMark);
+                                    var parts = tagInstance.Name.Split(':');
+                                    int d = (parts.Length >= 2 && int.TryParse(parts[1], out int parsedD)) ? parsedD : 0;
+                                    char bulletChar = IndentBullets[d % IndentBullets.Length];
+                                    string bulletText = $"{bulletChar} ";
+
+                                    // Insert bullet specifically with depthTag (tag ONLY on the bullet characters)
+                                    buffer.InsertWithTags(ref applyStart, bulletText, tagInstance);
+                                }
+                                else if (tagInstance != null)
+                                {
+                                    TextIter applyStart = buffer.GetIterAtMark(tagStartMark);
+                                    TextIter applyEnd = buffer.EndIter;
+                                    buffer.ApplyTag(tagInstance, applyStart, applyEnd);
+                                }
+
+                                buffer.DeleteMark(tagStartMark);
+                            }
+                            break;
                         }
-                        break;
                 }
+            }
+
+            while (stack.Count > 0)
+            {
+                var (m, _) = stack.Pop();
+                buffer.DeleteMark(m);
             }
         }
 
