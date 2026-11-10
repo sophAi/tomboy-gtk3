@@ -23,6 +23,7 @@ namespace Tomboy.Views
         private bool isContentChanged = false;
         private bool isMetadataChanged = false;
         private bool isLoading = true;
+        private bool isBatchInserting = false;
         private bool isUpdatingNotebookCombo = false;
         private bool _scrollPending = false;
         private uint saveTimeoutId = 0;
@@ -228,7 +229,7 @@ namespace Tomboy.Views
             textView.KeyPressEvent += OnTextViewKeyPress;
             textView.PopulatePopup += OnTextViewPopulatePopup;
             textView.Buffer.Changed += (s, e) => {
-                if (isClosed || isLoading || (latexSession != null && latexSession.IsRenderingLatex)) return;
+                if (isClosed || isLoading || isBatchInserting || (latexSession != null && latexSession.IsRenderingLatex)) return;
                 isContentChanged = true;
                 UpdateTitleFormatting();
                 QueueSave(1500, contentChanged: true);
@@ -1432,10 +1433,9 @@ namespace Tomboy.Views
             if (currDepth == null)
             {
                 Pango.Direction direction = Pango.Direction.Ltr;
-                if (start.Char.Length > 0 && !start.EndsLine())
+                if (!start.EndsLine())
                 {
-                    var charDir = Pango.Global.UnicharDirection(start.Char[0]);
-                    direction = (charDir == Pango.Direction.Rtl) ? Pango.Direction.Rtl : Pango.Direction.Ltr;
+                    direction = SafeGetDirection(start.Char);
                 }
 
                 InsertBullet(ref start, 0, direction);
@@ -1625,10 +1625,9 @@ namespace Tomboy.Views
                     TextIter start = buf.GetIterAtLine(iter.Line);
 
                     Pango.Direction direction = prevDepth.Direction;
-                    if (iter.Char != "\n" && iter.Char.Length > 0)
+                    if (iter.Char != "\n")
                     {
-                        var charDir = Pango.Global.UnicharDirection(iter.Char[0]);
-                        direction = (charDir == Pango.Direction.Rtl) ? Pango.Direction.Rtl : Pango.Direction.Ltr;
+                        direction = SafeGetDirection(iter.Char);
                     }
 
                     InsertBullet(ref start, prevDepth.Depth, direction);
@@ -1742,6 +1741,21 @@ namespace Tomboy.Views
             return (first == '•' || first == '◦' || first == '‣') && text[1] == ' ';
         }
 
+        private static Pango.Direction SafeGetDirection(string? str)
+        {
+            if (string.IsNullOrEmpty(str)) return Pango.Direction.Ltr;
+            if (char.IsSurrogate(str[0])) return Pango.Direction.Ltr;
+            try
+            {
+                var charDir = Pango.Global.UnicharDirection(str[0]);
+                return (charDir == Pango.Direction.Rtl) ? Pango.Direction.Rtl : Pango.Direction.Ltr;
+            }
+            catch
+            {
+                return Pango.Direction.Ltr;
+            }
+        }
+
         public bool HandlePaste()
         {
             TextBuffer buf = textView.Buffer;
@@ -1768,7 +1782,6 @@ namespace Tomboy.Views
             }
 
             InsertBulletedText(text);
-            QueueSave(500);
             return true;
         }
 
@@ -1778,69 +1791,80 @@ namespace Tomboy.Views
             string normalized = text.Replace("\r\n", "\n").Replace("\r", "\n");
             string[] lines = normalized.Split('\n');
 
-            for (int i = 0; i < lines.Length; i++)
+            isBatchInserting = true;
+            undoManager.FreezeUndo();
+            try
             {
-                string line = lines[i];
-                TextIter cursor = buf.GetIterAtMark(buf.InsertMark);
-
-                int depth = -1;
-                string content = line;
-
-                // Match Tomboy bullet styles
-                if (line.Length >= 2 && line[1] == ' ' && (line[0] == '•' || line[0] == '◦' || line[0] == '‣'))
+                for (int i = 0; i < lines.Length; i++)
                 {
-                    depth = line[0] switch
+                    string line = lines[i];
+                    TextIter cursor = buf.GetIterAtMark(buf.InsertMark);
+
+                    int depth = -1;
+                    string content = line;
+
+                    // Match Tomboy bullet styles
+                    if (line.Length >= 2 && line[1] == ' ' && (line[0] == '•' || line[0] == '◦' || line[0] == '‣'))
                     {
-                        '•' => 0,
-                        '◦' => 1,
-                        '‣' => 2,
-                        _ => 0
-                    };
-                    content = line.Substring(2);
-                }
-                else
-                {
-                    // Also support tab-indented bullets (e.g. "  - " or "\t* ")
-                    int ws = 0;
-                    while (ws < line.Length && (line[ws] == ' ' || line[ws] == '\t')) ws++;
-                    if (ws < line.Length - 1 && line[ws + 1] == ' ' && (line[ws] == '•' || line[ws] == '◦' || line[ws] == '‣' || line[ws] == '-' || line[ws] == '*'))
-                    {
-                        depth = Math.Min(4, ws / 2);
-                        content = line.Substring(ws + 2);
+                        depth = line[0] switch
+                        {
+                            '•' => 0,
+                            '◦' => 1,
+                            '‣' => 2,
+                            _ => 0
+                        };
+                        content = line.Substring(2);
                     }
-                }
-
-                if (depth >= 0)
-                {
-                    // If cursor is not at line start, insert a newline first
-                    if (cursor.LineOffset != 0)
+                    else
                     {
-                        buf.Insert(ref cursor, "\n");
+                        // Also support tab-indented bullets (e.g. "  - " or "\t* ")
+                        int ws = 0;
+                        while (ws < line.Length && (line[ws] == ' ' || line[ws] == '\t')) ws++;
+                        if (ws < line.Length - 1 && line[ws + 1] == ' ' && (line[ws] == '•' || line[ws] == '◦' || line[ws] == '‣' || line[ws] == '-' || line[ws] == '*'))
+                        {
+                            depth = Math.Min(4, ws / 2);
+                            content = line.Substring(ws + 2);
+                        }
+                    }
+
+                    if (depth >= 0)
+                    {
+                        // If cursor is not at line start, insert a newline first
+                        if (cursor.LineOffset != 0)
+                        {
+                            buf.Insert(ref cursor, "\n");
+                            cursor = buf.GetIterAtMark(buf.InsertMark);
+                        }
+
+                        Pango.Direction dir = SafeGetDirection(content);
+
+                        InsertBullet(ref cursor, depth, dir);
                         cursor = buf.GetIterAtMark(buf.InsertMark);
+                        buf.Insert(ref cursor, content);
                     }
-
-                    Pango.Direction dir = Pango.Direction.Ltr;
-                    if (content.Length > 0)
+                    else
                     {
-                        var charDir = Pango.Global.UnicharDirection(content[0]);
-                        dir = (charDir == Pango.Direction.Rtl) ? Pango.Direction.Rtl : Pango.Direction.Ltr;
+                        buf.Insert(ref cursor, content);
                     }
 
-                    InsertBullet(ref cursor, depth, dir);
-                    cursor = buf.GetIterAtMark(buf.InsertMark);
-                    buf.Insert(ref cursor, content);
-                }
-                else
-                {
-                    buf.Insert(ref cursor, content);
-                }
-
-                if (i < lines.Length - 1)
-                {
-                    cursor = buf.GetIterAtMark(buf.InsertMark);
-                    buf.Insert(ref cursor, "\n");
+                    if (i < lines.Length - 1)
+                    {
+                        cursor = buf.GetIterAtMark(buf.InsertMark);
+                        buf.Insert(ref cursor, "\n");
+                    }
                 }
             }
+            finally
+            {
+                isBatchInserting = false;
+                undoManager.ThawUndo();
+            }
+
+            isContentChanged = true;
+            UpdateTitleFormatting();
+            QueueSave(500, contentChanged: true);
+            QueueUrlHighlight(100);
+            RequestScrollCursorToCenter();
         }
 
         #endregion
