@@ -449,12 +449,9 @@ namespace Tomboy.Services
             }
         }
 
-        public static void HighlightExternalUrls(TextBuffer buffer)
+        public static void HighlightExternalUrls(TextBuffer buffer, TextIter? rangeStart = null, TextIter? rangeEnd = null)
         {
             if (buffer == null || buffer.Handle == IntPtr.Zero) return;
-
-            string text = buffer.Text;
-            if (string.IsNullOrEmpty(text)) return;
 
             string urlColor = Preferences.Current.UrlLinkColor;
             TextTag urlTag = buffer.TagTable.Lookup("link:url") ?? new TextTag("link:url")
@@ -471,34 +468,45 @@ namespace Tomboy.Services
             TextTag? latexCodeTag = buffer.TagTable.Lookup("latex_code");
             TextTag? latexImageTag = buffer.TagTable.Lookup("latex_image");
 
-            buffer.RemoveTag(urlTag, buffer.StartIter, buffer.EndIter);
+            TextIter scanStart = rangeStart ?? buffer.StartIter;
+            TextIter scanEnd = rangeEnd ?? buffer.EndIter;
+            if (scanStart.Offset >= scanEnd.Offset) return;
 
+            buffer.RemoveTag(urlTag, scanStart, scanEnd);
+
+            string text = buffer.GetText(scanStart, scanEnd, false);
+            if (string.IsNullOrEmpty(text)) return;
+
+            int baseOffset = scanStart.Offset;
             var matches = UrlRegex.Matches(text);
-            TextIter searchIter = buffer.StartIter;
+            TextIter searchIter = scanStart;
 
             foreach (Match m in matches)
             {
                 if (!m.Success) continue;
 
-                var (startOffset, length, cleanUrl) = CleanUrlMatch(m);
+                var (startOffsetInChunk, length, cleanUrl) = CleanUrlMatch(m);
                 if (length <= 0) continue;
+
+                int absStartOffset = baseOffset + startOffsetInChunk;
+                int absEndOffset = absStartOffset + length;
 
                 TextIter start;
                 TextIter end;
 
-                if (startOffset >= 0 && startOffset + length <= buffer.CharCount)
+                if (absStartOffset >= 0 && absEndOffset <= buffer.CharCount)
                 {
-                    start = buffer.GetIterAtOffset(startOffset);
-                    end = buffer.GetIterAtOffset(startOffset + length);
+                    start = buffer.GetIterAtOffset(absStartOffset);
+                    end = buffer.GetIterAtOffset(absEndOffset);
                     if (buffer.GetText(start, end, false) != cleanUrl)
                     {
-                        if (!searchIter.ForwardSearch(cleanUrl, TextSearchFlags.VisibleOnly, out start, out end, buffer.EndIter))
+                        if (!searchIter.ForwardSearch(cleanUrl, TextSearchFlags.VisibleOnly, out start, out end, scanEnd))
                             continue;
                     }
                 }
                 else
                 {
-                    if (!searchIter.ForwardSearch(cleanUrl, TextSearchFlags.VisibleOnly, out start, out end, buffer.EndIter))
+                    if (!searchIter.ForwardSearch(cleanUrl, TextSearchFlags.VisibleOnly, out start, out end, scanEnd))
                         continue;
                 }
 
@@ -512,7 +520,67 @@ namespace Tomboy.Services
             }
         }
 
-        public static void HighlightNoteTitleLinks(TextBuffer buffer, List<string> noteTitles, string currentNoteTitle = "")
+        internal class TitleTrieNode
+        {
+            public readonly Dictionary<char, TitleTrieNode> Children = new();
+            public string? Title;
+        }
+
+        internal class TitleTrie
+        {
+            public readonly TitleTrieNode Root = new();
+
+            public void Insert(string title)
+            {
+                if (string.IsNullOrWhiteSpace(title)) return;
+                var current = Root;
+                foreach (char c in title.ToLowerInvariant())
+                {
+                    if (!current.Children.TryGetValue(c, out var next))
+                    {
+                        next = new TitleTrieNode();
+                        current.Children[c] = next;
+                    }
+                    current = next;
+                }
+                current.Title = title;
+            }
+
+            public List<(int start, int length, string title)> SearchAll(string text, int offsetAdjustment = 0)
+            {
+                var matches = new List<(int start, int length, string title)>();
+                if (string.IsNullOrEmpty(text)) return matches;
+
+                for (int i = 0; i < text.Length; i++)
+                {
+                    var node = Root;
+                    int longestMatchLen = -1;
+                    string? longestTitle = null;
+
+                    for (int j = i; j < text.Length; j++)
+                    {
+                        char c = char.ToLowerInvariant(text[j]);
+                        if (!node.Children.TryGetValue(c, out node))
+                            break;
+
+                        if (node.Title != null)
+                        {
+                            longestMatchLen = j - i + 1;
+                            longestTitle = node.Title;
+                        }
+                    }
+
+                    if (longestTitle != null && longestMatchLen >= 2)
+                    {
+                        matches.Add((i + offsetAdjustment, longestMatchLen, longestTitle));
+                    }
+                }
+
+                return matches;
+            }
+        }
+
+        public static void HighlightNoteTitleLinks(TextBuffer buffer, List<string> noteTitles, string currentNoteTitle = "", TextIter? rangeStart = null, TextIter? rangeEnd = null)
         {
             if (buffer == null || buffer.Handle == IntPtr.Zero) return;
 
@@ -529,13 +597,18 @@ namespace Tomboy.Services
             TextTag? latexCodeTag = buffer.TagTable.Lookup("latex_code");
             TextTag? latexImageTag = buffer.TagTable.Lookup("latex_image");
 
-            TextIter contentStart = line1End;
-            TextIter contentEnd = buffer.EndIter;
+            TextIter scanStart = rangeStart ?? line1End;
+            if (scanStart.Offset < line1End.Offset)
+            {
+                scanStart = line1End;
+            }
+            TextIter scanEnd = rangeEnd ?? buffer.EndIter;
+            if (scanStart.Offset >= scanEnd.Offset) return;
 
-            // Remove existing note links from content area before re-scanning
+            // Remove existing note links from the target scan area before re-scanning
             if (internalLinkTag != null)
             {
-                buffer.RemoveTag(internalLinkTag, contentStart, contentEnd);
+                buffer.RemoveTag(internalLinkTag, scanStart, scanEnd);
             }
             foreach (string title in noteTitles)
             {
@@ -543,56 +616,69 @@ namespace Tomboy.Services
                 TextTag? tag = buffer.TagTable.Lookup(tagName);
                 if (tag != null)
                 {
-                    buffer.RemoveTag(tag, contentStart, contentEnd);
+                    buffer.RemoveTag(tag, scanStart, scanEnd);
                 }
             }
 
-            var sortedTitles = noteTitles
+            var validTitles = noteTitles
                 .Where(t => !string.IsNullOrWhiteSpace(t) && t.Length >= 2 && !string.Equals(t, currentNoteTitle, StringComparison.OrdinalIgnoreCase))
-                .OrderByDescending(t => t.Length)
+                .ToList();
+
+            if (validTitles.Count == 0) return;
+
+            // Build Trie dictionary for rapid linear-time multi-pattern matching
+            var trie = new TitleTrie();
+            foreach (var t in validTitles)
+            {
+                trie.Insert(t);
+            }
+
+            // Extract the chunk to search
+            int baseOffset = scanStart.Offset;
+            string chunkText = buffer.GetText(scanStart, scanEnd, false);
+            var rawMatches = trie.SearchAll(chunkText, baseOffset);
+
+            // Sort by length descending, then start offset ascending to prioritize longest matches
+            var sortedMatches = rawMatches
+                .OrderByDescending(m => m.length)
+                .ThenBy(m => m.start)
                 .ToList();
 
             var taggedRanges = new List<(int start, int end)>();
 
-            foreach (string title in sortedTitles)
+            foreach (var (index, length, title) in sortedMatches)
             {
-                int searchStart = contentStartOffset;
-                while (searchStart < bufferText.Length)
+                int endIndex = index + length;
+
+                // Word boundary check on full bufferText to accurately check boundaries
+                if (!IsWordBoundary(bufferText, index, length))
+                    continue;
+
+                // Skip if overlapping with an already tagged longer match
+                bool overlaps = false;
+                foreach (var (rStart, rEnd) in taggedRanges)
                 {
-                    int index = bufferText.IndexOf(title, searchStart, StringComparison.OrdinalIgnoreCase);
-                    if (index == -1) break;
-
-                    int endIndex = index + title.Length;
-                    searchStart = endIndex;
-
-                    // Word boundary check (supports ASCII words and CJK ideographs)
-                    if (!IsWordBoundary(bufferText, index, title.Length))
-                        continue;
-
-                    // Skip if overlapping with a longer title match
-                    bool overlaps = false;
-                    foreach (var (rStart, rEnd) in taggedRanges)
+                    if (index < rEnd && endIndex > rStart)
                     {
-                        if (index < rEnd && endIndex > rStart)
-                        {
-                            overlaps = true;
-                            break;
-                        }
+                        overlaps = true;
+                        break;
                     }
-                    if (overlaps) continue;
-
-                    TextIter startIter = buffer.GetIterAtOffset(index);
-                    TextIter endIter = buffer.GetIterAtOffset(endIndex);
-
-                    // Do not create links inside URLs or LaTeX formulas
-                    if (urlTag != null && (startIter.HasTag(urlTag) || endIter.HasTag(urlTag))) continue;
-                    if (latexCodeTag != null && startIter.HasTag(latexCodeTag)) continue;
-                    if (latexImageTag != null && startIter.HasTag(latexImageTag)) continue;
-
-                    TextTag linkTag = GetOrCreateLinkTag(buffer, title);
-                    buffer.ApplyTag(linkTag, startIter, endIter);
-                    taggedRanges.Add((index, endIndex));
                 }
+                if (overlaps) continue;
+
+                if (index < 0 || endIndex > buffer.CharCount) continue;
+
+                TextIter startIter = buffer.GetIterAtOffset(index);
+                TextIter endIter = buffer.GetIterAtOffset(endIndex);
+
+                // Do not create links inside URLs or LaTeX formulas
+                if (urlTag != null && (startIter.HasTag(urlTag) || endIter.HasTag(urlTag))) continue;
+                if (latexCodeTag != null && startIter.HasTag(latexCodeTag)) continue;
+                if (latexImageTag != null && startIter.HasTag(latexImageTag)) continue;
+
+                TextTag linkTag = GetOrCreateLinkTag(buffer, title);
+                buffer.ApplyTag(linkTag, startIter, endIter);
+                taggedRanges.Add((index, endIndex));
             }
         }
 
@@ -647,6 +733,7 @@ namespace Tomboy.Services
             int prevDepth = -1;
             int prevDepthLine = -1;
             bool lineHasDepth = false;
+            DepthInfo? currentLineDepth = null;
 
             TextIter iter = buffer.StartIter;
             TextIter nextIter = buffer.StartIter;
@@ -654,52 +741,54 @@ namespace Tomboy.Services
 
             while (!iter.IsEnd)
             {
-                DepthInfo? depthInfo = FindDepthTag(iter);
-
-                if (depthInfo != null && iter.StartsLine())
+                if (iter.StartsLine())
                 {
-                    lineHasDepth = true;
-
-                    if (iter.Line == prevDepthLine + 1)
+                    currentLineDepth = FindDepthTag(iter);
+                    if (currentLineDepth != null)
                     {
-                        if (depthInfo.Depth == prevDepth)
+                        lineHasDepth = true;
+
+                        if (iter.Line == prevDepthLine + 1)
                         {
-                            xml.WriteEndElement(); // close previous <list-item>
-                        }
-                        else if (depthInfo.Depth > prevDepth)
-                        {
-                            xml.WriteStartElement(null, "list", null);
-                            for (int i = prevDepth + 2; i <= depthInfo.Depth; i++)
+                            if (currentLineDepth.Depth == prevDepth)
                             {
-                                xml.WriteStartElement(null, "list-item", null);
-                                xml.WriteAttributeString("dir", depthInfo.Direction == Pango.Direction.Rtl ? "rtl" : "ltr");
+                                xml.WriteEndElement(); // close previous <list-item>
+                            }
+                            else if (currentLineDepth.Depth > prevDepth)
+                            {
                                 xml.WriteStartElement(null, "list", null);
+                                for (int i = prevDepth + 2; i <= currentLineDepth.Depth; i++)
+                                {
+                                    xml.WriteStartElement(null, "list-item", null);
+                                    xml.WriteAttributeString("dir", currentLineDepth.Direction == Pango.Direction.Rtl ? "rtl" : "ltr");
+                                    xml.WriteStartElement(null, "list", null);
+                                }
+                            }
+                            else
+                            {
+                                xml.WriteEndElement(); // close previous <list-item>
+                                for (int i = prevDepth; i > currentLineDepth.Depth; i--)
+                                {
+                                    xml.WriteEndElement(); // close <list>
+                                    xml.WriteEndElement(); // close <list-item>
+                                }
                             }
                         }
                         else
                         {
-                            xml.WriteEndElement(); // close previous <list-item>
-                            for (int i = prevDepth; i > depthInfo.Depth; i--)
+                            xml.WriteStartElement(null, "list", null);
+                            for (int i = 1; i <= currentLineDepth.Depth; i++)
                             {
-                                xml.WriteEndElement(); // close <list>
-                                xml.WriteEndElement(); // close <list-item>
+                                xml.WriteStartElement(null, "list-item", null);
+                                xml.WriteAttributeString("dir", currentLineDepth.Direction == Pango.Direction.Rtl ? "rtl" : "ltr");
+                                xml.WriteStartElement(null, "list", null);
                             }
                         }
-                    }
-                    else
-                    {
-                        xml.WriteStartElement(null, "list", null);
-                        for (int i = 1; i <= depthInfo.Depth; i++)
-                        {
-                            xml.WriteStartElement(null, "list-item", null);
-                            xml.WriteAttributeString("dir", depthInfo.Direction == Pango.Direction.Rtl ? "rtl" : "ltr");
-                            xml.WriteStartElement(null, "list", null);
-                        }
-                    }
 
-                    prevDepth = depthInfo.Depth;
-                    xml.WriteStartElement(null, "list-item", null);
-                    xml.WriteAttributeString("dir", depthInfo.Direction == Pango.Direction.Rtl ? "rtl" : "ltr");
+                        prevDepth = currentLineDepth.Depth;
+                        xml.WriteStartElement(null, "list-item", null);
+                        xml.WriteAttributeString("dir", currentLineDepth.Direction == Pango.Direction.Rtl ? "rtl" : "ltr");
+                    }
                 }
 
                 // Output any tags beginning at current position
@@ -719,23 +808,25 @@ namespace Tomboy.Services
                 }
                 else if (iter.Pixbuf == null && iter.Char != "\uFFFC")
                 {
-                    bool isBulletChar = depthInfo != null && (iter.LineOffset == 0 || iter.LineOffset == 1) && IsBulletPrefix(iter);
+                    bool isBulletChar = currentLineDepth != null && (iter.LineOffset == 0 || iter.LineOffset == 1) && IsBulletPrefix(iter);
                     if (!isBulletChar && !string.IsNullOrEmpty(iter.Char))
                     {
                         xml.WriteString(iter.Char);
                     }
                 }
 
-                bool endOfDepthLine = lineHasDepth && nextIter.EndsLine();
+                bool isLineEnd = nextIter.EndsLine();
+                bool endOfDepthLine = lineHasDepth && isLineEnd;
                 bool nextLineHasDepth = false;
 
-                if (iter.Line < buffer.LineCount - 1)
+                // Evaluate next line depth only at the line end
+                if (isLineEnd && iter.Line < buffer.LineCount - 1)
                 {
                     TextIter nextLine = buffer.GetIterAtLine(iter.Line + 1);
                     nextLineHasDepth = FindDepthTag(nextLine) != null;
                 }
 
-                if (endOfDepthLine || (nextLineHasDepth && nextIter.EndsLine()))
+                if (endOfDepthLine || (nextLineHasDepth && isLineEnd))
                 {
                     while (tagStack.Count > 0)
                     {
@@ -743,7 +834,7 @@ namespace Tomboy.Services
                         WriteTagEnd(xml, t);
                     }
                 }
-                else
+                else if (tagStack.Count > 0)
                 {
                     foreach (TextTag tag in iter.Tags)
                     {

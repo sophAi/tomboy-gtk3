@@ -549,6 +549,100 @@ namespace Tomboy.Views
             ApplyFilterSafely();
         }
 
+        private bool MatchesFilter(NoteItem note, string query, string notebookFilter)
+        {
+            if (note.Tags.Contains("system:template")) return false;
+
+            if (notebookFilter == "Unfiled Notes")
+            {
+                if (!string.IsNullOrWhiteSpace(note.Notebook)) return false;
+            }
+            else if (notebookFilter != "All Notes" && !string.IsNullOrEmpty(notebookFilter))
+            {
+                if (!string.Equals(note.Notebook, notebookFilter, StringComparison.OrdinalIgnoreCase)) return false;
+            }
+
+            if (!string.IsNullOrEmpty(query))
+            {
+                var terms = query.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+                if (terms.Length > 0)
+                {
+                    if (!terms.All(term =>
+                        note.Title.IndexOf(term, StringComparison.OrdinalIgnoreCase) >= 0 ||
+                        note.TextContent.IndexOf(term, StringComparison.OrdinalIgnoreCase) >= 0))
+                    {
+                        return false;
+                    }
+                }
+            }
+
+            return true;
+        }
+
+        public void OnNoteSaved(NoteItem savedNote)
+        {
+            if (savedNote == null || isRefreshingNotebooks) return;
+
+            // 1. Synchronize or insert into internal allNotes
+            var existing = allNotes.FirstOrDefault(n => n.Guid == savedNote.Guid);
+            if (existing == null)
+            {
+                allNotes.Add(savedNote);
+            }
+            else if (!object.ReferenceEquals(existing, savedNote))
+            {
+                existing.Title = savedNote.Title;
+                existing.Notebook = savedNote.Notebook;
+                existing.LastChangeDate = savedNote.LastChangeDate;
+                existing.LastMetadataChangeDate = savedNote.LastMetadataChangeDate;
+                existing.XmlContent = savedNote.XmlContent;
+            }
+
+            // 2. Check if a new notebook was introduced
+            if (!string.IsNullOrWhiteSpace(savedNote.Notebook) && knownNotebooks.Add(savedNote.Notebook))
+            {
+                notebookStore?.AppendValues(notebookIcon, savedNote.Notebook, false);
+            }
+
+            // 3. Update in notesListStore incrementally without reloading all notes from disk
+            if (notesListStore == null || notesTreeView == null) return;
+
+            string query = searchEntry?.Text?.Trim().ToLower() ?? string.Empty;
+            bool matches = MatchesFilter(savedNote, query, currentNotebookFilter);
+
+            bool foundInList = false;
+            if (notesListStore.GetIterFirst(out TreeIter iter))
+            {
+                do
+                {
+                    var item = notesListStore.GetValue(iter, 4) as NoteItem;
+                    if (item != null && item.Guid == savedNote.Guid)
+                    {
+                        foundInList = true;
+                        if (matches)
+                        {
+                            string displayDate = GetPrettyPrintDate(savedNote.LastChangeDate, true);
+                            notesListStore.SetValue(iter, 1, savedNote.Title);
+                            notesListStore.SetValue(iter, 2, string.IsNullOrEmpty(savedNote.Notebook) ? "-" : savedNote.Notebook);
+                            notesListStore.SetValue(iter, 3, displayDate);
+                            notesListStore.SetValue(iter, 4, savedNote);
+                        }
+                        else
+                        {
+                            notesListStore.Remove(ref iter);
+                        }
+                        break;
+                    }
+                } while (notesListStore.IterNext(ref iter));
+            }
+
+            if (!foundInList && matches)
+            {
+                string displayDate = GetPrettyPrintDate(savedNote.LastChangeDate, true);
+                notesListStore.AppendValues(noteIcon, savedNote.Title, string.IsNullOrEmpty(savedNote.Notebook) ? "-" : savedNote.Notebook, displayDate, savedNote);
+            }
+        }
+
         private void ApplyFilterSafely()
         {
             if (notesTreeView == null || notesListStore == null) return;
@@ -557,27 +651,7 @@ namespace Tomboy.Views
             notesListStore.Clear();
 
             string query = searchEntry.Text?.Trim().ToLower() ?? string.Empty;
-            IEnumerable<NoteItem> querySet = allNotes.Where(n => !n.Tags.Contains("system:template"));
-
-            if (currentNotebookFilter == "Unfiled Notes")
-            {
-                querySet = querySet.Where(n => string.IsNullOrWhiteSpace(n.Notebook));
-            }
-            else if (currentNotebookFilter != "All Notes" && !string.IsNullOrEmpty(currentNotebookFilter))
-            {
-                querySet = querySet.Where(n => string.Equals(n.Notebook, currentNotebookFilter, StringComparison.OrdinalIgnoreCase));
-            }
-
-            if (!string.IsNullOrEmpty(query))
-            {
-                var terms = query.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
-                if (terms.Length > 0)
-                {
-                    querySet = querySet.Where(n => terms.All(term =>
-                        n.Title.IndexOf(term, StringComparison.OrdinalIgnoreCase) >= 0 ||
-                        n.TextContent.IndexOf(term, StringComparison.OrdinalIgnoreCase) >= 0));
-                }
-            }
+            IEnumerable<NoteItem> querySet = allNotes.Where(n => MatchesFilter(n, query, currentNotebookFilter));
 
             int count = 0;
             foreach (var note in querySet)
@@ -1111,7 +1185,7 @@ namespace Tomboy.Views
                 return false;
             });
 
-            var win = new NoteWindow(note, availableNbs, () => RefreshNotes(), selectTitleOnOpen: selectTitleOnOpen, initialSearchText: initialSearchText);
+            var win = new NoteWindow(note, availableNbs, (saved) => OnNoteSaved(saved), selectTitleOnOpen: selectTitleOnOpen, initialSearchText: initialSearchText);
             openNoteWindows[note.Guid] = win;
             win.DeleteEvent += (s, e) => {
                 openNoteWindows.Remove(note.Guid);
@@ -1143,7 +1217,7 @@ namespace Tomboy.Views
 
             var allNotes = NoteStorage.LoadAllNotes();
             var availableNbs = allNotes.Select(n => n.Notebook).Where(b => !string.IsNullOrEmpty(b)).Distinct();
-            var win = new NoteWindow(note, availableNbs, onSave: () => Instance?.RefreshNotes(), selectTitleOnOpen: selectTitleOnOpen, initialSearchText: initialSearchText);
+            var win = new NoteWindow(note, availableNbs, onSave: (saved) => Instance?.OnNoteSaved(saved), selectTitleOnOpen: selectTitleOnOpen, initialSearchText: initialSearchText);
             openNoteWindows[note.Guid] = win;
             win.DeleteEvent += (s, e) => openNoteWindows.Remove(note.Guid);
             win.Destroyed += (s, e) => openNoteWindows.Remove(note.Guid);

@@ -16,7 +16,7 @@ namespace Tomboy.Views
 
         private NoteItem note;
         public NoteItem NoteItem => note;
-        private System.Action? onSaveCallback;
+        private System.Action<NoteItem>? onSaveCallback;
         private bool isSaving = false;
         private bool isDeleting = false;
         private bool isClosed = false;
@@ -62,7 +62,7 @@ namespace Tomboy.Views
         private string lastSearchQuery = string.Empty;
         private DateTime lastEnterPressTime = DateTime.MinValue;
 
-        public NoteWindow(NoteItem noteItem, IEnumerable<string> availableNotebooks, System.Action? onSave = null, bool selectTitleOnOpen = false, string? initialSearchText = null) 
+        public NoteWindow(NoteItem noteItem, IEnumerable<string> availableNotebooks, System.Action<NoteItem>? onSave = null, bool selectTitleOnOpen = false, string? initialSearchText = null) 
             : base(Gtk.WindowType.Toplevel)
         {
             this.note = noteItem;
@@ -281,7 +281,7 @@ namespace Tomboy.Views
             });
 
             InitLatexSession();
-            QueueUrlHighlight(50);
+            QueueUrlHighlight(50, dirtyRangeOnly: false);
         }
 
         private void OnDeleteButtonClicked(object? sender, EventArgs e)
@@ -312,7 +312,7 @@ namespace Tomboy.Views
                 latexSession = null;
                 MainWindow.UnregisterOpenNoteWindow(note.Guid);
                 NoteStorage.DeleteNote(note);
-                onSaveCallback?.Invoke();
+                MainWindow.Instance?.RefreshNotes();
                 if (Handle != IntPtr.Zero)
                 {
                     Hide();
@@ -571,7 +571,7 @@ namespace Tomboy.Views
             }
         }
 
-        private void QueueUrlHighlight(uint delayMs = 250)
+        private void QueueUrlHighlight(uint delayMs = 250, bool dirtyRangeOnly = true)
         {
             if (isClosed || isLoading || (latexSession != null && latexSession.IsRenderingLatex)) return;
 
@@ -588,9 +588,25 @@ namespace Tomboy.Views
                 {
                     if (latexSession == null || !latexSession.IsRenderingLatex)
                     {
-                        XmlNoteBufferBinder.HighlightExternalUrls(textView.Buffer);
+                        var buf = textView.Buffer;
+                        TextIter? rangeStart = null;
+                        TextIter? rangeEnd = null;
+
+                        if (dirtyRangeOnly)
+                        {
+                            TextIter cursor = buf.GetIterAtMark(buf.InsertMark);
+                            TextIter s = cursor;
+                            TextIter e = cursor;
+                            s.BackwardLines(2);
+                            e.ForwardLines(2);
+                            e.ForwardToLineEnd();
+                            rangeStart = s;
+                            rangeEnd = e;
+                        }
+
+                        XmlNoteBufferBinder.HighlightExternalUrls(buf, rangeStart, rangeEnd);
                         var allTitles = NoteStorage.GetAllNoteTitles();
-                        XmlNoteBufferBinder.HighlightNoteTitleLinks(textView.Buffer, allTitles, note.Title);
+                        XmlNoteBufferBinder.HighlightNoteTitleLinks(buf, allTitles, note.Title, rangeStart, rangeEnd);
                     }
                 }
                 return false;
@@ -730,7 +746,7 @@ namespace Tomboy.Views
                     XmlContent = $"<note-content version=\"0.1\" xmlns=\"http://beatniksoftware.com/tomboy\" xmlns:link=\"http://beatniksoftware.com/tomboy/link\" xmlns:size=\"http://beatniksoftware.com/tomboy/size\" xml:space=\"preserve\"><note-title>{targetTitle}</note-title>\n\nDescribe your new note here.</note-content>"
                 };
                 targetNote.Save(NoteStorage.NoteDirectory);
-                onSaveCallback?.Invoke();
+                onSaveCallback?.Invoke(targetNote);
             }
 
             MainWindow.OpenNote(targetNote, selectTitleOnOpen: false);
@@ -2080,7 +2096,7 @@ namespace Tomboy.Views
                 note.Save(NoteStorage.NoteDirectory);
                 isContentChanged = false;
                 isMetadataChanged = false;
-                onSaveCallback?.Invoke();
+                onSaveCallback?.Invoke(note);
             }
             catch (Exception ex)
             {
@@ -2151,7 +2167,7 @@ namespace Tomboy.Views
         {
             ApplyCustomPreferences();
             InitLatexSession();
-            QueueUrlHighlight(50);
+            QueueUrlHighlight(50, dirtyRangeOnly: false);
             if (Preferences.Current.EnableTypewriterScrolling)
             {
                 RequestScrollCursorToCenter();

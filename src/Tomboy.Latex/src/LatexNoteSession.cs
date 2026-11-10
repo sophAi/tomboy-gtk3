@@ -102,12 +102,40 @@ namespace Tomboy.Latex
             });
         }
 
+        private int lastCursorOffset = -1;
+        private bool lastCursorInCode = false;
+
         private void OnMarkSet(object o, MarkSetArgs args)
         {
             if (isDisposed || checkLatexRunning) return;
             if (args.Mark == textView.Buffer.InsertMark)
             {
-                QueueCheckLaTeX(40);
+                var buf = textView.Buffer;
+                if (buf == null || buf.Handle == IntPtr.Zero) return;
+
+                TextIter cursor = buf.GetIterAtMark(args.Mark);
+                int off = cursor.Offset;
+                if (off == lastCursorOffset) return;
+                lastCursorOffset = off;
+
+                // Check if cursor entered or exited a latex_code region or is adjacent to a latex_image
+                bool inCode = codeTag != null && cursor.HasTag(codeTag);
+                bool nearImage = false;
+                if (imageTag != null)
+                {
+                    if (cursor.HasTag(imageTag)) nearImage = true;
+                    else
+                    {
+                        TextIter prev = cursor;
+                        if (prev.BackwardChar() && prev.HasTag(imageTag)) nearImage = true;
+                    }
+                }
+
+                if (inCode != lastCursorInCode || inCode || nearImage)
+                {
+                    lastCursorInCode = inCode;
+                    QueueCheckLaTeX(40);
+                }
             }
         }
 

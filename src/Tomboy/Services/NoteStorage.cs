@@ -52,11 +52,19 @@ namespace Tomboy.Services
 
         private static readonly Dictionary<string, (DateTime lastWrite, string title)> titleCache = new();
         private static readonly object cacheLock = new();
+        private static List<string> cachedTitlesList = new();
+        private static DateTime lastTitleScanTime = DateTime.MinValue;
+        private static readonly TimeSpan TitleCacheDuration = TimeSpan.FromSeconds(2.0);
 
-        public static List<string> GetAllNoteTitles()
+        public static List<string> GetAllNoteTitles(bool forceRefresh = false)
         {
             lock (cacheLock)
             {
+                if (!forceRefresh && (DateTime.UtcNow - lastTitleScanTime) < TitleCacheDuration && cachedTitlesList.Count > 0)
+                {
+                    return cachedTitlesList;
+                }
+
                 string dir = NoteDirectory;
                 if (!Directory.Exists(dir)) return new List<string>();
 
@@ -90,6 +98,8 @@ namespace Tomboy.Services
                     titleCache.Remove(k);
                 }
 
+                cachedTitlesList = titles;
+                lastTitleScanTime = DateTime.UtcNow;
                 return titles;
             }
         }
